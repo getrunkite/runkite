@@ -31,7 +31,7 @@ from .factory_graph import FactoryGraph, RunFactoryContext, RunnerUser, classify
 from .heartbeat import heartbeat_loop
 from .logging_config import setup_logging
 from .run_status import should_skip_run
-from .schema_introspect import report_agent_schemas
+from .schema_introspect import SchemaPublisher
 from .store import RunkiteStore
 from .tenant_ctx import checkpoint_thread_id, validate_native_checkpoint_identity
 from .tls_utils import grpc_channel_credentials
@@ -662,13 +662,11 @@ async def run_worker(
     runner_token = os.environ.get("RUNNER_TOKEN", "")
     auth_metadata = [("runner-kind", runner_kind), ("runner-token", runner_token)] if runner_token else []
 
-    # Real schema introspection, once at startup: overwrites the
-    # {"type":"object"} stub bootstrapAgents (cmd/serve.go) wrote at
-    # registration time with each STATIC graph's actual input/output/
-    # state/config JSON Schema -- see schema_introspect.py's own doc
-    # comment for why this can only happen here (the control plane never
-    # loads the graph itself) and why factory graphs are skipped.
-    await report_agent_schemas(adapter.graphs, http_address, runner_token, runner_kind)
+    # Capture static graph schema bytes once. Startup retains the historical
+    # PUT; later recovery uses an atomic stub-only POST and never re-introspects
+    # graphs or inherits an assignment's tenant/run context.
+    schema_publisher = SchemaPublisher(adapter.graphs, http_address, runner_token, runner_kind)
+    await schema_publisher.report_startup()
 
     # Checkpoint dual/tri mode: direct Postgres, HTTP opaque proxy, or
     # in-memory. See checkpoint.py for the full rationale. Proxy URL comes
@@ -783,6 +781,7 @@ async def run_worker(
     in_flight_tasks: set[asyncio.Task] = set()
 
     try:
+        schema_publisher.start()
         await _poll_loop(
             stub,
             adapter,
@@ -797,6 +796,7 @@ async def run_worker(
             runner_token=runner_token,
         )
     finally:
+        await schema_publisher.stop()
         cancel_watcher_task.cancel()
         if custom_app_task is not None:
             custom_app_task.cancel()

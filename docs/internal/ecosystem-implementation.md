@@ -66,9 +66,29 @@ Check the built Admin, static support links, engineering navigation, release
 availability labels and package/artifact contents. The later release will list
 only what was actually qualified. No finite suite proves absence of all bugs.
 
+## Next authorized slices, in order
+
+1. **Static graph schema recovery: implementation and qualification in progress.**
+   Reuse cached Python static LangGraph reports and add atomic bootstrap-only
+   recovery after registration resets. Preserve useful/partial reports, old-plane
+   compatibility, unknown freshness and existing MCP session snapshots. The
+   [engineering contract](schema-publication-recovery.md) records the local
+   real-worker and storage qualification. Hosted checks remain a separate PR
+   merge gate.
+2. **Optional tools-only connector profiles: selected, not implemented by this slice.**
+   Define and qualify this separately after schema recovery. The current
+   connector contract is unchanged by the schema work.
+3. **Cron schedule preview: selected, not implemented by this slice.**
+   Define and qualify preview separately after the connector slice. Existing
+   scheduler behavior and retained-run visibility are unchanged here. Preview
+   must not be confused with a per-fire receipt ledger.
+
+These are current-source work items, not additions to published v0.9.0 artifacts
+or evidence that the three implementations and release gates are complete.
+
 ## Follow-on qualification: Langfuse OTLP
 
-The [Langfuse recipe](../langfuse.md) is the next authorized slice. It reuses
+The completed [Langfuse recipe](../langfuse.md) reuses
 existing v0.9.0 OTLP exporters with explicit per-language HTTP encodings, project
 authorization and a separately operated receiver. The
 [engineering note](langfuse-otlp.md) records passing actual-exporter wire checks
@@ -106,8 +126,8 @@ composition, atomic exec binding and continuous enforcement require separate
 contracts and qualification; the bounded snapshot comparison above does not
 establish them.
 
-Response inspection, optional tools-only connector profiles, per-fire cron
-receipts and requester-private ownership require separate callers and designs.
+Response inspection, per-fire cron receipts and requester-private ownership
+remain outside these selected slices and require separate callers and designs.
 Do not create a second vault, issuer, policy engine, workflow scheduler,
 observability product or model loop. Do not copy another product's runtime or
 UI into the binary. The existing Deep Agents path already uses LangGraph.

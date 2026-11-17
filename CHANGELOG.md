@@ -62,6 +62,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Cache static Python LangGraph schemas once and recover existing exact
+  bootstrap rows through a new atomic internal POST after registration resets
+  or failed publication. Preserve useful/partial reports and the original
+  startup PUT; old planes get no unsafe PUT fallback. Reject known configured
+  runner-kind mismatches on both schema routes. No factory/TypeScript/named-tenant
+  introspection, reporter provenance or MCP session refresh is added.
+
 - Correct current isolated-workload guides that still omitted the v0.8.0
   cumulative usage and settlement contract. Provider verification and unreported
   usage limits remain explicit.

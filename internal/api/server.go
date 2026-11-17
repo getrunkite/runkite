@@ -378,6 +378,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /internal/runs/{runID}/usage", s.handleGetRunUsage)
 	mux.HandleFunc("POST /internal/runs/{runID}/usage", s.handleReportRunUsage)
 	mux.HandleFunc("PUT /internal/agents/{agentID}/schema", s.handleReportAgentSchema)
+	mux.HandleFunc("POST /internal/agents/{agentID}/schema/recover", s.handleRecoverAgentSchema)
 
 	// Connector Registry (internal, for runners)
 	mux.HandleFunc("GET /internal/connectors", s.handleListConnectors)

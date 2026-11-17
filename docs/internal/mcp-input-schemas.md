@@ -17,6 +17,14 @@ may retain stubs. A separately supplied report is not evidence that a particular
 worker has loaded matching code. `AgentSchema` still has no reporter revision,
 report time or deployment binding. This feature does not invent that provenance.
 
+The Unreleased [static graph publication recovery](schema-publication-recovery.md)
+caches Python static reports once and uses a separate periodic endpoint to fill
+only existing exact four-field bootstrap rows after a reset or failed report.
+It does not replace useful/partial reports, introspect factories or other SDKs,
+or attest which same-kind worker's code is current. Ordinary startup PUT retains
+its replacement behavior. Publication recovery and MCP catalog refresh are
+different operations; the session and unknown-freshness rules below still apply.
+
 The tool's `_meta["getrunkite.com/input-schema"]` states:
 
 - `status` is `reported` or `generic`.
@@ -32,6 +40,12 @@ The tool's `_meta["getrunkite.com/input-schema"]` states:
 An existing stateful session retains that snapshot after reports change. Open a
 new session to discover updates. There is no schema subscription, freshness
 claim or automatic replacement inside an existing catalog.
+
+Schema descriptions, defaults, examples and enum values can contain sensitive
+text even though a report is not runtime input or a conversation. Treat those
+definitions as discoverable data, keep secrets/customer samples out of their
+annotations and redact support captures. Publication logging does not turn
+application/framework diagnostics into a general-purpose redactor.
 
 ## Supported schema subset and fallback
 

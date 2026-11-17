@@ -2031,6 +2031,18 @@ def _build_internal_spec() -> dict:
                     },
                     "title": "AgentSchema",
                 },
+                "AgentSchemaReport": {
+                    "type": "object",
+                    "description": "Schema publication body. The path determines agent_id; a supplied body agent_id cannot select another agent. Schema fields are optional in the existing handler. Definitions can contain sensitive annotations, defaults and examples.",
+                    "properties": {
+                        "agent_id": {"type": "string", "description": "Ignored for identity; the path is authoritative."},
+                        "input_schema": {"type": "object"},
+                        "output_schema": {"type": "object"},
+                        "state_schema": {"type": "object"},
+                        "config_schema": {"type": "object"},
+                    },
+                    "title": "AgentSchemaReport",
+                },
                 "ConnectorInfo": {
                     "type": "object",
                     "properties": {
@@ -2077,7 +2089,41 @@ def _build_internal_spec() -> dict:
         },
         "paths": {
             "/internal/runs/{run_id}/status": {"get": {"tags": ["Runner"], "summary": "Get Run Status", "operationId": "get_run_status", "parameters": [r_id], "responses": {**_json_response("200", "Success", {"type": "object", "properties": {"status": {"type": "string"}}}), "404": _ERR_404}}},
-            "/internal/agents/{agent_id}/schema": {"put": {"tags": ["Runner"], "summary": "Report Agent Schema", "operationId": "report_agent_schema", "parameters": [a_id], "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("AgentSchema")}}}, "responses": {"204": {"description": "Success"}}}},
+            "/internal/agents/{agent_id}/schema": {
+                "put": {
+                    "tags": ["Runner"],
+                    "summary": "Report Agent Schema",
+                    "description": "Replace the schema for an existing agent in the effective tenant. This retains startup publication's replacement semantics. When authenticated runner-kind context and a configured agent runner_kind are both known, they must match. No-token local mode retains its existing behavior. Publication is not code, reporter-version or readiness attestation.",
+                    "operationId": "report_agent_schema",
+                    "parameters": [a_id],
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("AgentSchemaReport")}}},
+                    "responses": {
+                        "204": {"description": "Schema published"},
+                        "400": {"description": "Invalid request body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                        "401": {"description": "Missing or invalid required runner credentials", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                        "403": {"description": "Known configured runner-kind mismatch or denied runner/pool scope", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                        "404": _ERR_404,
+                    },
+                },
+            },
+            "/internal/agents/{agent_id}/schema/recover": {
+                "post": {
+                    "tags": ["Runner"],
+                    "summary": "Recover Bootstrap Agent Schema (Unreleased)",
+                    "description": "Atomically fill an existing tenant-scoped schema row only when all four stored fields are exactly {\"type\":\"object\"}. Does not insert a missing row or replace useful, annotated or partial reports. An incoming all-stub report is a no-op. A 204 response does not distinguish a recovered row from an unchanged row. Requires the optional AgentSchemaRecoveryStore extension, implemented by the four built-in stores. Older planes do not support this route; clients must not fall back to replacement PUT. Known configured runner-kind checks match startup publication. This does not establish code freshness or refresh an existing MCP session catalog.",
+                    "operationId": "recover_agent_schema",
+                    "parameters": [a_id],
+                    "requestBody": {"required": True, "content": {"application/json": {"schema": _ref("AgentSchemaReport")}}},
+                    "responses": {
+                        "204": {"description": "Recovery evaluated; bootstrap schema recovered or existing schema left unchanged"},
+                        "400": {"description": "Invalid request body", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                        "401": {"description": "Missing or invalid required runner credentials", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                        "403": {"description": "Known configured runner-kind mismatch or denied runner/pool scope", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                        "404": _ERR_404,
+                        "501": {"description": "State store does not implement atomic bootstrap schema recovery", "content": {"application/json": {"schema": _ref("ErrorResponse")}}},
+                    },
+                },
+            },
             "/internal/connectors": {"get": {"tags": ["Runner"], "summary": "List Connectors", "operationId": "list_connectors", "responses": {**_json_response("200", "Success", _array_of(_ref("ConnectorInfo")))}}},
             "/internal/connectors/{name}": {"get": {"tags": ["Runner"], "summary": "Get Connector", "operationId": "get_connector", "parameters": [n_param], "responses": {**_json_response("200", "Success", _ref("ConnectorDetail")), "404": _ERR_404}}},
             "/internal/connectors/{name}/session": {"post": {"tags": ["Runner"], "summary": "Get Connector Session", "operationId": "get_connector_session", "parameters": [n_param], "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"user_context": {"type": "object"}}}}}}, "responses": {**_json_response("200", "Success", {"type": "object"}), "404": _ERR_404, "502": {"description": "Bad Gateway", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},

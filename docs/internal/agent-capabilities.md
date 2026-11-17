@@ -45,6 +45,12 @@ The fields describe conditional adapter behavior:
   not report whether schema publication succeeded or whether a separately
   supplied schema is current.
 
+The Unreleased [publication-recovery task](schema-publication-recovery.md) does
+not add a descriptor value or a readiness signal. It fills only exact bootstrap
+rows from cached static Python reports; useful/partial reports can remain from
+another worker. The existing `schema_reporting` condition and unknown freshness
+are unchanged.
+
 Unknown features use the literal `unknown`. The UI also treats missing,
 malformed or future descriptor formats and unfamiliar feature codes as unknown.
 It uses fixed local support links, never URLs supplied in capability metadata.

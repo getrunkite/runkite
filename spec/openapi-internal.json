@@ -103,6 +103,29 @@
         },
         "title": "AgentSchema"
       },
+      "AgentSchemaReport": {
+        "type": "object",
+        "description": "Schema publication body. The path determines agent_id; a supplied body agent_id cannot select another agent. Schema fields are optional in the existing handler. Definitions can contain sensitive annotations, defaults and examples.",
+        "properties": {
+          "agent_id": {
+            "type": "string",
+            "description": "Ignored for identity; the path is authoritative."
+          },
+          "input_schema": {
+            "type": "object"
+          },
+          "output_schema": {
+            "type": "object"
+          },
+          "state_schema": {
+            "type": "object"
+          },
+          "config_schema": {
+            "type": "object"
+          }
+        },
+        "title": "AgentSchemaReport"
+      },
       "ConnectorInfo": {
         "type": "object",
         "properties": {
@@ -608,6 +631,7 @@
           "Runner"
         ],
         "summary": "Report Agent Schema",
+        "description": "Replace the schema for an existing agent in the effective tenant. This retains startup publication's replacement semantics. When authenticated runner-kind context and a configured agent runner_kind are both known, they must match. No-token local mode retains its existing behavior. Publication is not code, reporter-version or readiness attestation.",
         "operationId": "report_agent_schema",
         "parameters": [
           {
@@ -626,14 +650,141 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AgentSchema"
+                "$ref": "#/components/schemas/AgentSchemaReport"
               }
             }
           }
         },
         "responses": {
           "204": {
-            "description": "Success"
+            "description": "Schema published"
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid required runner credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Known configured runner-kind mismatch or denied runner/pool scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/agents/{agent_id}/schema/recover": {
+      "post": {
+        "tags": [
+          "Runner"
+        ],
+        "summary": "Recover Bootstrap Agent Schema (Unreleased)",
+        "description": "Atomically fill an existing tenant-scoped schema row only when all four stored fields are exactly {\"type\":\"object\"}. Does not insert a missing row or replace useful, annotated or partial reports. An incoming all-stub report is a no-op. A 204 response does not distinguish a recovered row from an unchanged row. Requires the optional AgentSchemaRecoveryStore extension, implemented by the four built-in stores. Older planes do not support this route; clients must not fall back to replacement PUT. Known configured runner-kind checks match startup publication. This does not establish code freshness or refresh an existing MCP session catalog.",
+        "operationId": "recover_agent_schema",
+        "parameters": [
+          {
+            "description": "Agent ID.",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Agent Id"
+            },
+            "name": "agent_id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentSchemaReport"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Recovery evaluated; bootstrap schema recovered or existing schema left unchanged"
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid required runner credentials",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Known configured runner-kind mismatch or denied runner/pool scope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "State store does not implement atomic bootstrap schema recovery",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }

@@ -100,9 +100,36 @@ GET    /agents/{id}/schemas                    Get agent input/output/state/conf
 GET    /agents/{id}/versions                   List version history (newest first)
 POST   /agents/{id}/versions/{v}/rollback      Roll back to an old version's content
 PUT    /internal/agents/{id}/schema            Runner reports its real, introspected schema (see below)
+POST   /internal/agents/{id}/schema/recover    Recover an existing all-bootstrap schema only (Unreleased)
 ```
 
-`GET .../schemas` starts as a `{"type": "object"}` stub for every field the moment an agent is registered (the control plane never loads a runner's graph itself, so it has no way to know the real shape up front) -- the **Python** LangGraph runner overwrites it with the real thing at startup, calling `PUT /internal/agents/{id}/schema` once per static graph (not factory graphs -- their shape depends on per-run context that doesn't exist yet at load time) with `get_input_jsonschema()`/`get_output_jsonschema()`/`get_config_jsonschema()` plus the compiled graph's own `builder.state_schema` converted via pydantic's `TypeAdapter` -- all genuine LangGraph public API, no private/internal fields. **The TypeScript runner still reports the stub** -- LangGraph.js's compiled graph has no public equivalent of Python's `get_*_jsonschema()` methods (only internal, underscore-prefixed fields not safe to depend on across versions), so real introspection isn't implemented there; `getGraph()`/`getGraphAsync()` exist but return the visual node/edge structure for diagramming, not a data schema.
+`GET .../schemas` starts with a `{"type":"object"}` bootstrap stub in each of
+four fields. The plane registers these stubs without loading the graph. The
+Python LangGraph runner introspects loaded static graphs using
+`get_input_jsonschema()`, `get_output_jsonschema()`, `get_config_jsonschema()`
+and Pydantic conversion of `builder.state_schema`, then performs its existing
+startup PUT. Factory graphs remain excluded because their shape can depend on
+per-run context. TypeScript and other Python profiles retain bootstrap defaults;
+LangGraph.js visual graph methods are not equivalent data-schema APIs.
+
+Unreleased source caches the static reports once and adds independent bounded
+background recovery rounds with a 60-second interval. Recovery POST atomically
+fills only an existing row whose four fields are all exact bootstrap stubs.
+Partial/useful reports are never replaced by recovery, no row is inserted, and
+an incoming all-stub report makes no change. The four built-in stores implement
+the optional `AgentSchemaRecoveryStore`; unsupported custom stores return 501.
+Old planes return 404, with no fallback to a replacement PUT. Both routes check
+a known configured runner-kind mismatch when authenticated kind context exists.
+Startup PUT keeps its existing replacement semantics; recovery does not prove
+code freshness or resolve competing same-kind worker versions.
+
+Use matching plane/worker versions for automatic recovery. Named-tenant
+introspection, factory/TypeScript introspection and schema reporter timestamps
+or revisions are not added. Existing MCP sessions retain their catalog and need
+reconnection after report changes; freshness remains unknown. Schema defaults,
+examples and descriptions can contain sensitive data even though reports are
+definitions rather than runtime arguments. See the
+[recovery contract and operator procedure](internal/schema-publication-recovery.md).
 
 Agents carry a `version` field: starts at 1, increments only when an agent's actual definition (name/description/metadata/capabilities) changes on re-bootstrap -- restarting the control plane with an unchanged `langgraph.json` does not bump it. Every bump writes an immutable snapshot to a separate version-history record (never updated or deleted afterward), so `GET /agents/{id}/versions` can show every definition an agent has ever had. `POST .../rollback` re-applies an old snapshot's content via the same `UpsertAgent` path -- this creates a NEW version whose content matches the old one, rather than deleting or rewriting history (`git revert`, not `git reset`): rolling back from v5 to v2's content produces v6, and v2/v3/v4 remain in history unchanged, showing that a rollback happened rather than erasing what came after it.
 

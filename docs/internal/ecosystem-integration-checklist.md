@@ -7,6 +7,19 @@ The public entry point is [Integrations](../integrations.md#unreleased-current-s
 
 ## Assemble the matching source tree
 
+The next authorized sequence is static graph schema recovery, optional
+tools-only connector profiles, then cron schedule preview. Only schema recovery
+is in progress in this slice. Do not advertise the other two as implemented or
+qualified. Follow [the staged plan](ecosystem-implementation.md#next-authorized-slices-in-order).
+For schema recovery, assemble `SchemaPublisher`, both internal schema handlers,
+the optional `AgentSchemaRecoveryStore` extension and its four built-in store
+implementations together with [the recovery guide](schema-publication-recovery.md).
+Qualify default-tenant static Python graphs, exact four-stub atomic replacement,
+preserved useful/partial reports, configured-kind checks, old-plane 404 and
+custom-store 501 without PUT fallback. Keep real worker recovery, store races
+and MCP session snapshots separate test boundaries. No native-worker or hosted
+pass is claimed by this checklist entry.
+
 The navigation change expects the following feature documents and support
 sections to land with their implementations. A partial checkout can therefore
 have real missing local links. Integrate the source dependencies and rerun the
@@ -204,7 +217,7 @@ still need caller-specific qualification.
 
 Temporal and Cloudflare caller recipes, broader OpenShell composition and
 continuous-enforcement qualification, response inspection,
-tools-only connector profiles, per-fire cron receipts and requester-private
+per-fire cron receipts and requester-private
 thread ownership remain separate designs or demand-led work. No catalog
 installer, workflow runtime, policy engine, vault, identity issuer, observability
 backend or frontend framework is embedded by this program. Native tools that

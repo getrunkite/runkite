@@ -63,6 +63,36 @@ or approval migrations by editing tables or migration stamps. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090) and
 [release verification](releasing.md#v090-candidate-unreleased).
 
+## Static graph schema publication recovery (Unreleased)
+
+This checkout adds automatic recovery for the default-tenant static Python
+LangGraph reports already produced at startup. A plane registration can reset
+stored schemas to bootstrap stubs; a matching newer worker retains its captured
+schema bytes and runs bounded recovery independently of job polling. There is
+no DDL or Runner Protocol migration. Upgrade the plane and Python worker
+together; older planes return 404 and custom stores without the optional atomic
+extension return 501. Recovery never falls back to a replacement PUT.
+
+Inspect `GET /agents/{agentID}/schemas` or the existing Admin Agent Detail
+schema view. Allow recovery rounds while checking fixed diagnostics and HTTP
+status, not a live-worker capability label. Recovery changes only an existing
+row with four exact object stubs. A partial/useful report stays intact, so
+reconcile competing worker versions explicitly. The original startup PUT keeps
+its replacement behavior. Restart the worker when deploying changed graph code;
+recovery does not re-introspect a live process or attest its code version.
+
+The recovery interval is 60 seconds, with bounded requests/rounds and cache
+limits; it is not a per-agent delivery SLA. Factories, TypeScript, other Python
+adapters and named-tenant introspection gain no new support. A 403 can indicate
+configured-kind, credential or pool-scope mismatch. Check registration and plane
+version for 404; restore HTTP/TLS reachability for request failures. No run or
+tool retry is needed to republish a schema. Reconnect stateful MCP clients after
+an update because their tool catalog remains a snapshot with unknown freshness.
+
+Schema definitions can contain sensitive defaults, examples and descriptions.
+Share only redacted diagnostics, not schema dumps, credentials or upstream error
+bodies. See the [exact algorithm and recovery procedure](internal/schema-publication-recovery.md).
+
 <a id="identity-and-distribution-candidate"></a>
 
 ## Identity and distribution upgrade (v0.8.0)
