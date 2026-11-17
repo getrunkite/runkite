@@ -247,8 +247,12 @@ func TestEnqueueRollbackDefiniteRejectionRecoversWithoutBrokerReplay(t *testing.
 	// A disconnected caller must not prevent the owned cleanup transaction.
 	cancelled, cancel := context.WithCancel(ctx)
 	cancel()
-	plane.rollbackCreatedRun(cancelled, run)
-	plane.rollbackCreatedRun(cancelled, run)
+	if !plane.rollbackCreatedRun(cancelled, run) {
+		t.Fatal("applied never-started rollback did not provide positive retry proof")
+	}
+	if plane.rollbackCreatedRun(cancelled, run) {
+		t.Fatal("rollback replay supplied new retry proof without an applied transition")
+	}
 	current, err := store.GetRun(ctx, run.RunID)
 	if err != nil || current.Status != models.RunStatusError || current.Error != "enqueue failed" {
 		t.Fatalf("definite rejection was not settled: run=%+v err=%v", current, err)

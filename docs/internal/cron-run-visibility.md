@@ -119,6 +119,51 @@ Configuration-file discovery still bootstraps default-tenant schedules and
 requires unique names across discovered files. The fix enables same-name
 dispatch for named schedules that the tenant-scoped store already supports.
 
+## Acknowledgement loss and fire claims (Unreleased)
+
+A queue can accept a scheduled assignment, let it finish, and then return a
+delivery error. Previously the scheduler released the occurrence's fire claim
+for every non-conflict dispatch error. A second poll could therefore execute
+the same occurrence again even though enqueue cleanup preserved the first
+run's committed result. A real SQLite/API regression reproduced two synthetic
+effects across two polls before this correction.
+
+Scheduled dispatch now carries an internal retry disposition with the original
+run and error chain. Its cleanup reuses canonical `FailUnstarted` completion
+against that exact stored record. Only this call's `Accepted=true`,
+`Applied=true`, nil-error outcome proves that the original pending run was
+failed before any worker attempt could start. A completion replay is not a new
+applied transition. Missing identity, replacement, store errors, ambiguous
+commits and finalization errors provide no positive retry proof.
+
+The scheduler retains the claim and consumes its anchor for admitted, completed
+or uncertain outcomes. Calendar schedules advance to the poll time; relative
+intervals retain the handled fire time, as before. Definite precreation errors
+and explicit atomic admission-limit rejections still release the claim for
+retry. Normal and cached run-write attempts are tracked privately, so an
+ambiguous insertion error cannot masquerade as a precreation failure. Existing
+busy-thread conflicts keep their overlap behavior. A typed scheduled error is
+examined before its wrapped cause, so a queue error wrapping `ErrConflict`
+cannot acquire busy-thread semantics by accident.
+
+This uses no latest-thread-run lookup, new fire-to-run table or schema change.
+Other callers can still use the same thread. The warning records the known
+original run ID for explicit reconciliation; it does not turn claim history
+into a dispatch ledger. Ordinary HTTP callers retain their original delivery
+errors. Upgrade all cron-serving replicas before relying on the new retry
+disposition. Claim retention, schedule edits, process crashes and downstream
+effects retain their separate limits; this is not cross-system exactly-once
+execution or automatic retry of uncertain work.
+
+The regression covers two polls and a peer claim probe across default,
+exact named and owned legacy threads, with calendar and relative anchors.
+It checks completed/active/uncertain delivery and proven never-started retry,
+including a queue cause wrapping `ErrConflict`. API SQLite cases additionally
+cover original-record replacement, missing identity, finalization failure,
+ambiguous normal/cache commits, atomic admission rejection and unchanged HTTP
+error responses. These bounded provider-free tests are separate from live
+transport failures, multi-plane deployment qualification and hosted results.
+
 ## Scope and verification
 
 The original retained-run projection does not calculate future fire times.
