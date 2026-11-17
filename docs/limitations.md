@@ -443,6 +443,18 @@ pools. Published v0.6.1 artifacts do not implement these controls.
   one worker, external multi-replica workload or live model/provider. Existing SDK
   adapters do not become sandboxed merely by selecting a pool. See the
   [exact qualification scope](internal/constrained-execution.md#verification-and-remaining-qualification).
+- The Unreleased [effective-policy qualifier](internal/openshell-effective-policy.md)
+  optionally captures matching current/loaded sandbox policy and compares it
+  with the original boundary using the official OpenShell 0.1.8 checker.
+  It changes no production worker or authorization gate. Its passing local
+  macOS fixture uses in-memory checkpoint/usage clients; inspect the separate
+  Linux workflow's actual current result for that environment. Global/provider
+  composition and unsupported checker inputs are rejected. Observed snapshot equality does not
+  atomically fence exec, prevent change-and-restore between observations or
+  establish continuous kernel enforcement. No blocked URL was supplied in the
+  recorded run, so it adds no runtime network reachability claim. The profile
+  remains experimental and does not acquire universal isolation or independent
+  certification from a configuration comparison.
 - Published v0.7.0 has no supported isolated usage frame. v0.8.0 adds the bounded
   reporting contract below. Neither version can infer absent
   provider charges from zero recorded spend.

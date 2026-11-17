@@ -175,7 +175,7 @@
           <li>Automatic model-catalog shopping (routing only uses configured <code>routing.aliases</code>).</li>
           <li>When recognized model output has no reported token/cost data, runners emit an explicit unmetered marker instead of presenting missing usage as free. Arbitrary work inside a tool can still be outside the SDK's reported usage.</li>
           <li>Decision-only <code>/governance/decide</code> calls create no managed usage record and do not enforce spend caps.</li>
-          <li>The experimental external JSONL workload has no model/token-usage or spend-settlement contract. Zero recorded spend does not establish free execution. Managed admission still applies, but unreported model calls require external provider accounting and limits; native SDK adapters' usage support is independent. See <a href="security-completion.html#execution-boundary">execution boundaries</a>.</li>
+          <li>Published v0.7.0 has no isolated usage-settlement contract. v0.8.0 adds durable cumulative JSONL workload reports and SQL terminal settlement, including acknowledged partial usage. Unknown and reported zero remain distinct. These workload claims do not verify provider bills or hard-limit dishonest/unreported calls; keep external provider accounting and limits. Native SDK usage support is independent. See <a href="security-completion.html#execution-boundary">execution boundaries</a>.</li>
           <li>Connector payload shrink does not write <code>usage_events</code>. Admin Spend moves only if the runner reports fewer tokens.</li>
         </ul>
         <p>

@@ -182,6 +182,19 @@ This result does not qualify plane dispatch, framework workers, backend UI,
 real providers or HA. The wire/offline workflow excludes the native backend;
 the earlier native caller results do not expand this helper-boundary proof.
 
+The November 17, 2026 local [OpenShell effective-policy fixture](openshell-effective-policy.md)
+separately passed two created incarnations against the official 0.1.8 checker,
+with matching current/loaded policy snapshots, real provider-free workload
+probes, gateway TLS and confirmed cleanup on macOS/OrbStack. Four actual checker
+controls distinguished containment, root-user expansion, invalid input and
+unsupported input. No blocked destination was supplied, so this is no new
+runtime-network qualification. Its checkpoint/usage clients are in-memory
+fixtures, not plane SQL/HA. Inspect the automatic Linux workflow's actual current
+result separately from that measured Darwin/ARM64 evidence. Keep checker-model
+configuration containment separate from kernel probes, atomic exec binding, hidden provider
+state, continuous enforcement and independent assessment. Public RFE #47 and
+#52 remain separate open tracking items.
+
 ## Keep demand-led work deferred
 
 The language-qualified [Langfuse OTLP recipe](../langfuse.md) and its own
@@ -189,8 +202,8 @@ The language-qualified [Langfuse OTLP recipe](../langfuse.md) and its own
 recorded above. Production rollout and any additional GenAI attribute mapping
 still need caller-specific qualification.
 
-Temporal and Cloudflare caller recipes, effective OpenShell policy
-qualification, response inspection,
+Temporal and Cloudflare caller recipes, broader OpenShell composition and
+continuous-enforcement qualification, response inspection,
 tools-only connector profiles, per-fire cron receipts and requester-private
 thread ownership remain separate designs or demand-led work. No catalog
 installer, workflow runtime, policy engine, vault, identity issuer, observability

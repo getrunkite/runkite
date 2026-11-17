@@ -43,6 +43,10 @@ each result. Do not project a result from one version or backend onto another.
 - [RFE #47](https://github.com/getrunkite/runkite/issues/47): a combined disposable
   multi-plane, SQL/Redis, TLS and external-worker qualification. Record the
   measured runtime, network implementation, faults and duration.
+  The Unreleased [effective-policy fixture](internal/openshell-effective-policy.md)
+  adds a separate current/loaded snapshot and pinned-checker comparison around
+  real isolated execution. Its local pass does not expand the historical HA
+  result or close this tracking issue.
 - [RFE #52](https://github.com/getrunkite/runkite/issues/52): this reproducible
   handoff and the separate, still-pending external reviewer assessment.
 
@@ -195,6 +199,18 @@ The external OpenShell/runtime/CNI and two-real-plane soak remain separate
 explicit fixtures. Use their documented owned-infrastructure wrappers and
 retain their actual evidence. A passing local unit suite does not qualify an
 external runtime, another CNI, a different TLS proxy or an untested deployment.
+
+The Unreleased [effective-policy qualifier](internal/openshell-effective-policy.md)
+has its own optional `--prover` flag and automatic Linux workflow. It inspects
+the exact observed loaded revision around a provider-free fixture and accepts
+only the pinned checker's consistent `within_boundary` result. The recorded
+November 17, 2026 macOS result is separate from hosted Linux, managed SQL/HA and
+real-provider evidence. Current/loaded snapshot equality is not an atomic exec
+fence or continuous enforcement proof. Global/provider composition and
+unsupported comparisons remain refused. Include the synthetic policy/TLS/cleanup
+summaries in the reviewer handoff without raw policies or management secrets.
+RFE #47 and #52 tracking, including independent assessment, remains separate;
+this maintainer qualification does not close either issue.
 
 ## Manual combined qualification in GitHub Actions
 

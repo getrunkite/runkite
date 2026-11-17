@@ -81,11 +81,30 @@ qualification. The new workflow covers wire/offline checks only. This adds no
 exporter, model wrapper or embedded backend, and does not change v0.9.0
 availability labels.
 
+## Follow-on qualification: OpenShell effective policy
+
+The Unreleased [effective-policy fixture](openshell-effective-policy.md) reuses
+the existing external OpenShell 0.1.8 JSONL workload and adds an optional
+qualification-only checker. It captures current/loaded sandbox policy before
+exec and after probes, compares the observed policy with the original boundary
+under the pinned checker's model, and fails on unsupported inputs or observed
+drift. The fresh provider-free local macOS fixture passed with TLS and confirmed
+cleanup. Inspect the automatic Linux workflow's actual current result separately
+from that measured Darwin/ARM64 evidence.
+
+This adds evidence to RFE #47 and the RFE #52 reviewer handoff without closing
+either tracking issue or independent assessment. It changes no production
+worker or enforcement gate. Snapshot observations cannot prove atomic exec
+binding, continuous kernel enforcement or absence of hidden provider state.
+Existing HA/CNI qualifications remain separate and the profile stays
+experimental.
+
 ## Deliberately outside this release gate
 
-Temporal and Cloudflare caller examples remain demand-led. OpenShell
-effective-policy work remains an explicitly experimental
-qualification spike until its pinned runtime is proven.
+Temporal and Cloudflare caller examples remain demand-led. Broader OpenShell
+composition, atomic exec binding and continuous enforcement require separate
+contracts and qualification; the bounded snapshot comparison above does not
+establish them.
 
 Response inspection, optional tools-only connector profiles, per-fire cron
 receipts and requester-private ownership require separate callers and designs.

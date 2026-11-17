@@ -691,6 +691,26 @@ private task-owned state. The old standalone fixture still defaults to loopback
 HTTP unless `--tls` is explicitly selected. Review the separate gateway TLS
 preflight/outage report as well as workload and cleanup evidence.
 
+### Effective-policy fixture inspection (Unreleased)
+
+For the experimental isolated profile, the checkout qualifier accepts
+`--prover /absolute/path/to/openshell-prover`. Use the checksum-verified official
+0.1.8 CLI and prover with a disposable local TLS gateway. Follow the
+[complete setup and invocation](internal/openshell-effective-policy.md#reproduce-on-a-disposable-local-engine).
+The helper checks the gateway's current effective policy, its exact loaded
+revision and the pinned checker's boundary result around the fixture workload.
+It rejects ambiguous composition, unsupported results and observed drift.
+No flag means `not_requested`, not policy-comparison success.
+
+Review the policy summary, gateway TLS report and confirmed cleanup together.
+Retain private recovery state after failures and reconcile only the owned
+sandbox; do not publish policy bodies, management keys or upstream diagnostics.
+The measured local macOS run passed; inspect the separate Linux workflow's
+actual current result for that environment. This adds no production gate or
+atomic snapshot-to-exec fence. It does not replace runtime probes,
+deployment-specific review, provider
+limits or the separate HA qualification above.
+
 ### Runner HTTP TLS compatibility
 
 The 0.8.0 runner clients refuse plaintext HTTP whenever a client certificate is

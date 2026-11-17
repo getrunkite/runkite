@@ -6,6 +6,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Added
 
+- Extend the opt-in isolated fixture qualifier with pinned OpenShell 0.1.8
+  effective/loaded-policy capture and whole-policy containment checking before
+  execution and observed-policy consistency checks before deletion. Add native
+  checker controls and a Linux qualification workflow. Production worker and
+  checkpoint contracts remain unchanged.
+
 - Add a Langfuse deployment recipe using the existing OTLP exporters, with
   per-language HTTP encodings, receiver authorization and explicit observation,
   privacy and qualification boundaries. Add three-language wire checks and a
@@ -55,6 +61,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   freshness. Preserve the existing raw execution and session-snapshot contracts.
 
 ### Fixed
+
+- Correct current isolated-workload guides that still omitted the v0.8.0
+  cumulative usage and settlement contract. Provider verification and unreported
+  usage limits remain explicit.
 
 - Guard retained Admin run reads before returning payload and make referenced
   views read-only snapshots. A deleted/recreated run ID cannot redirect their
