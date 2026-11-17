@@ -712,7 +712,7 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	// Build RunAssignment for the runner
 	assignment := &transport.RunAssignment{
 		RunID:            runID,
-		RunIncarnationID: run.IncarnationID,
+		RunIncarnationID: state.RunIdentity(run),
 		ThreadID:         threadID,
 		RunnerKind:       runnerKind,
 		GraphID:          req.AgentID,
@@ -816,10 +816,9 @@ func (s *Server) createRunCtx(ctx context.Context, threadID string, req *models.
 	return run, assignment, nil
 }
 
-// rollbackCreatedRun cleans up after createRunCtx succeeded but a later
-// enqueue (or equivalent) failed: the run is stuck pending, the thread
-// is stuck busy, and ActiveRuns was already incremented. Without this,
-// that thread can never accept another run.
+// rollbackCreatedRun settles only the original, never-started run after an
+// enqueue or subscription error. A lost publication acknowledgement does not
+// prove rejection: a worker may already own the attempt or have committed it.
 func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 	if run == nil {
 		return
@@ -829,25 +828,20 @@ func (s *Server) rollbackCreatedRun(ctx context.Context, run *models.Run) {
 	// chance to settle rather than writing with an already canceled context.
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	ctx = cleanupCtx
-	tryStatusTransition("update_run_status", run.ThreadID, run.RunID, func() error {
-		return s.store.UpdateRunStatus(ctx, run.RunID, models.RunStatusError, nil, "enqueue failed")
-	})
-	metrics.ActiveRuns.Dec()
-	tryStatusTransition("release_thread", run.ThreadID, run.RunID, func() error {
-		_, err := s.store.ReleaseThreadIfNoOtherActive(ctx, run.ThreadID, run.RunID, models.ThreadStatusIdle)
-		return err
-	})
-	// Close after any Subscribe that may have already happened (stream/wait
-	// paths subscribe before enqueue) so tailers and broker state do not leak.
-	_ = s.broker.Close(run.RunID)
-	tid := run.TenantID
-	if tid == "" {
-		tid = tenant.FromContext(ctx)
+	identity := state.RunIdentity(run)
+	if identity == "" {
+		// A custom store without an immutable row identity cannot prove that a
+		// delayed cleanup still owns this run ID. Preserve it for reconciliation.
+		slog.Warn("enqueue rollback retained run without immutable identity", "run_id", run.RunID)
+		return
 	}
-	// The run is already marked failed. A webhook claim error is logged inside
-	// finishRun and is not recoverable from this rollback.
-	_ = s.finishRun(run.RunID, run.ThreadID, run.AgentID, tid, models.RunStatusError, "enqueue failed")
+	_, err := s.completeRunResult(cleanupCtx, &state.RunCompletion{
+		TrustedSystem: true, ExpectedIncarnationID: identity, FailUnstarted: true,
+		RunID: run.RunID, Generation: 0, Status: models.RunStatusError, Error: "enqueue failed",
+	})
+	if err != nil {
+		slog.Warn("enqueue rollback could not settle original run", "run_id", run.RunID, "error", err)
+	}
 }
 
 // DispatchScheduledRun creates and enqueues a run with no HTTP request

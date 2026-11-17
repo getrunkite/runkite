@@ -268,6 +268,52 @@ resuming sensitive retained conversations, inspect the selected checkpoint and
 current thread state, then repair explicitly if they disagree. Do not silently
 rewrite historical payloads or infer that an old tool did not execute.
 
+## Opaque checkpoint record fencing (Unreleased)
+
+A generation identifies an attempt within one run record. Fresh dispatches start
+at generation 1, so generation alone cannot distinguish a deleted run from a new
+record reusing the same run ID and thread. A PUT authorized before completion
+could pause while reading its body, then overwrite the replacement's state.
+DELETE had the same authorization-to-mutation gap.
+
+The dispatch now captures `state.RunIdentity`: SQL's existing private incarnation
+or Mongo's existing immutable ObjectID through hidden `Run.StorageIdentity`.
+Mongo's public `Run.IncarnationID` stays empty. Neither this internal helper nor
+the queued identity enables Mongo public SQL run references, governance or
+durable usage. Normal Mongo inserts explicitly choose a fresh ObjectID;
+unsupported or missing stored `_id` values fail closed rather than aliasing an
+ObjectID or acquiring an empty identity.
+
+Opaque mutations require `RunCheckpointBinding.RecordIdentity` and compare it
+inside the existing run/blob transaction. SQL retains the run-row lock through
+the comparison and mutation; Mongo retains its write-conflict transaction fence.
+The shared attempt helper used by connector and usage paths is unchanged, and
+their separate incarnation checks remain in place. A matching blob ETag or
+create-only condition cannot grant authority to an old run record. Existing
+runner HTTP headers and public checkpoint reads are unchanged. Custom Go stores
+must enforce the nonempty record identity in their bound opaque mutation
+implementations under the same atomic boundary.
+
+Upgrade all replicas and drain assignments without the snapshot before relying
+on the fence. No schema migration, automatic history repair or direct framework
+database protection is added. Internal expected-record completion and observation
+checks also recognize the Mongo identity without producing a public SQL reference.
+
+`internal/api/checkpoint_incarnation_test.go` reproduces blocked HTTP PUT and
+DELETE followed by same-ID, same-generation recreation. The original PUT
+returned 204 and replaced `current` with `stale` before the fix. Shared store
+conformance checks same timestamps, missing identity, matching ETags, create-only
+conditions, retained state and expected-record completion. Mongo codec tests
+reject string/zero identities and verify that storage identity stays private.
+
+The integrated follow-up passed the full API/command suites and configured
+state suites on SQLite, Postgres, MySQL and Mongo, plus vet, lint, site/link
+checks and the 170-route OpenAPI check. The [combined qualification record](atomic-results-and-identities.md#durable-state-qualification-november-17-2026)
+separates the valid run from earlier fixture failures. This is a fence for a
+request retaining its captured identity across replacement. Fresh requests
+still use existing runner-pool/workload-owner authorization; no client-echoed
+incarnation proof or general stale-RPC revocation is added.
+
 ## Verification for contributors
 
 - `internal/state/conformance/connector_action.go`: all three SQL backends share

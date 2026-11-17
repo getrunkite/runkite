@@ -25,6 +25,9 @@ func (s *Store) lockCheckpointRun(ctx context.Context, binding state.RunCheckpoi
 	if err := state.CheckRunCheckpointBinding(run, binding); err != nil {
 		return err
 	}
+	if err := state.CheckOpaqueCheckpointIdentity(run, binding); err != nil {
+		return err
+	}
 	result, err := s.col("runs").UpdateOne(ctx,
 		tenantFilter(ctx, bson.M{"run_id": binding.RunID}),
 		bson.M{"$inc": bson.M{"_runkite_checkpoint_revision": int64(1)}},

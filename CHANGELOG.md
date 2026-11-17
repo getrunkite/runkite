@@ -82,6 +82,22 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   Default IDs stay unchanged. Stop all cron writers for upgrade or rollback;
   mixed versions can split first-fire history. No schema or state migration.
 
+- Fence opaque checkpoint PUT and DELETE to the original stored run record,
+  preventing an authorized slow request from mutating a deleted/recreated run
+  with the same ID and generation. Reuse SQL incarnation IDs and Mongo's existing
+  ObjectID privately; missing dispatch identity fails closed. Blob CAS and
+  Mongo's public SQL-only capability boundaries remain unchanged.
+
+- Fence enqueue-failure cleanup to the original pending run before any worker
+  attempt begins. A lost publication acknowledgement no longer overwrites a
+  committed result, clears an accepted worker's thread claim or mutates a run
+  reusing the same ID. Use the existing completion transaction and idempotent
+  finalization; the caller still receives the original delivery error.
+
+- Make MySQL cron fire claims independent of `clientFoundRows`: atomic inserts
+  report only duplicate-key conflicts as lost claims, preserving exact tenant,
+  schedule and fire-time scope without changing valid DSN options or schema.
+
 - Reject malformed cron timezone prefixes without a parser panic, stop on zero
   or non-advancing next times, and retain the local not-due anchor for `@every`
   so intervals longer than the scheduler tick can become due. Calendar

@@ -28,13 +28,26 @@ func (d Driver) LockRunCheckpoint(ctx context.Context, tx Tx, binding state.RunC
 	return err
 }
 
+// LockOpaqueCheckpoint retains the shared attempt lock and additionally pins
+// an opaque mutation to the immutable row captured when it was dispatched.
+func (d Driver) LockOpaqueCheckpoint(ctx context.Context, tx Tx, binding state.RunCheckpointBinding) error {
+	if err := d.LockRunCheckpoint(ctx, tx, binding); err != nil {
+		return err
+	}
+	var incarnation string
+	if err := tx.Row(ctx, d.query(`SELECT incarnation_id FROM runs WHERE run_id=?`), binding.RunID).Scan(&incarnation); err != nil {
+		return err
+	}
+	return state.CheckOpaqueCheckpointIdentity(&models.Run{IncarnationID: incarnation}, binding)
+}
+
 func (d Driver) WithRunCheckpoint(ctx context.Context, binding state.RunCheckpointBinding, mutate func(Tx) error) error {
 	tx, err := d.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	if err := d.LockRunCheckpoint(ctx, tx, binding); err != nil {
+	if err := d.LockOpaqueCheckpoint(ctx, tx, binding); err != nil {
 		return err
 	}
 	if err := mutate(tx); err != nil {
@@ -49,7 +62,7 @@ func (d Driver) DeleteBoundOpaqueCheckpoint(ctx context.Context, binding state.R
 		return err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	if err := d.LockRunCheckpoint(ctx, tx, binding); err != nil {
+	if err := d.LockOpaqueCheckpoint(ctx, tx, binding); err != nil {
 		return err
 	}
 	tid := tenant.FromContext(ctx)

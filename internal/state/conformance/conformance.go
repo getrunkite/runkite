@@ -27,6 +27,7 @@ func RunStoreSuite(t *testing.T, factory StoreFactory) {
 	t.Run("threads", func(t *testing.T) { runThreadTests(t, factory) })
 	t.Run("runs", func(t *testing.T) { runRunTests(t, factory) })
 	t.Run("completion", func(t *testing.T) { runCompletionTests(t, factory) })
+	t.Run("enqueue_rollback", func(t *testing.T) { runEnqueueRollbackTests(t, factory) })
 	t.Run("json_numbers", func(t *testing.T) { runJSONNumberTests(t, factory, jsonNumbers) })
 	t.Run("store_items", func(t *testing.T) { runStoreItemTests(t, factory) })
 	t.Run("checkpoints", func(t *testing.T) { runCheckpointTests(t, factory) })

@@ -169,3 +169,42 @@ collision refusal, busy-thread overlap and backend lookup failures. Definition
 and preview-only requests still perform no history lookups. The 43 static-site
 tests and local-link checks passed. Hosted Linux and live backend results must
 be read separately from these local measurements.
+
+## MySQL cron claim insertion (Unreleased)
+
+MySQL fire claims use a normal atomic `INSERT` into the existing composite
+primary key `(tenant_id, schedule_name, fire_time)`. A native MySQL duplicate-key
+error (1062) means the claim already exists and returns `won=false` without an
+error. Other backend errors remain errors. A losing claim does not update the
+existing row. There is no schema migration or rewrite of retained claims.
+
+The previous no-op `ON DUPLICATE KEY UPDATE` inferred a winner from affected
+rows. With the valid driver option `clientFoundRows=true`, an existing claim
+also reported one affected row. Both callers could therefore claim the same
+occurrence. A busy thread could reject a second overlapping dispatch, but a
+quickly completed first run did not prevent a second run for that occurrence.
+The insert contract works with either setting; no DSN option is rejected.
+
+`TestCronClaimClientFoundRowsSequentialScopes` and
+`TestCronClaimClientFoundRowsConcurrent` exercise the real driver with the option
+both disabled and enabled. They cover duplicate losses, twenty contenders,
+exact padded tenant scope, separate schedules and fire times, UTC instant
+equivalence, release/reclaim and last-fire preservation. The same fixture checks
+the existing terminal-hook and busy-thread claim shapes without changing them.
+`TestCronClaimClientFoundRowsPreservesBackendErrors` checks that a cancelled
+request remains an error and leaves no claim behind. An explicitly configured
+unavailable fixture fails; the optional default fixture may skip and cannot
+count as a qualification pass.
+
+Maintainer qualification ran the preserved pre-fix and fixed regression binaries against
+an owned MySQL 8.4 fixture. The pre-fix binary exited 1: sequential duplicate
+claims with `clientFoundRows=true` incorrectly returned `won=true`, and all
+twenty concurrent contenders won. The fixed binary exited 0 with all three
+tests and five profile cases passing. Both concurrent driver profiles produced
+exactly one winner. This records actual native before/after execution, separate
+from the broader MySQL suite.
+
+These are store-level claim regressions. They do not establish a complete
+multi-control-plane deployment profile, exactly-once business effects or a
+per-fire dispatch receipt. Scheduler retry, overlap, retention and latest-only
+catch-up behavior retain their existing boundaries.

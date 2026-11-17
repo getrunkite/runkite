@@ -13,6 +13,10 @@ type RunCheckpointBinding struct {
 	RunID      string
 	Generation int64
 	ThreadID   string
+	// RecordIdentity is mandatory for opaque mutations, captured from the
+	// stored run at dispatch. Other users of the shared attempt fields retain
+	// their own existing incarnation checks.
+	RecordIdentity string
 }
 
 type RunCheckpointStore interface {
@@ -35,6 +39,18 @@ func CheckRunCheckpointBinding(run *models.Run, binding RunCheckpointBinding) er
 	}
 	if MetadataGeneration(run.Metadata, AttemptGenerationKey) != binding.Generation {
 		return &ErrRunCheckpointFence{ReasonCode: "run_generation_mismatch"}
+	}
+	return nil
+}
+
+// CheckOpaqueCheckpointIdentity requires the original stored run record in
+// addition to its attempt generation. Blob CAS never grants run authority.
+func CheckOpaqueCheckpointIdentity(run *models.Run, binding RunCheckpointBinding) error {
+	if binding.RecordIdentity == "" {
+		return &ErrRunCheckpointFence{ReasonCode: "run_binding_required"}
+	}
+	if run == nil || RunIdentity(run) != binding.RecordIdentity {
+		return &ErrRunCheckpointFence{ReasonCode: "run_incarnation_mismatch"}
 	}
 	return nil
 }

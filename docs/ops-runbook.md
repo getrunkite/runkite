@@ -63,6 +63,31 @@ or approval migrations by editing tables or migration stamps. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090) and
 [release verification](releasing.md#v090-candidate-unreleased).
 
+## Enqueue acknowledgement failures (Unreleased)
+
+A delivery error can follow queue acceptance. Before creating replacement work,
+inspect the original run through REST or Admin and preserve its exact tenant and
+run identity. An error response alone does not prove that a model or tool stopped.
+
+The source rollback path now commits `enqueue failed` only when that original
+run is still pending and no worker attempt has started. If worker admission
+already won, its thread remains busy until ordinary completion, cancellation or
+reclaim settles it. A committed terminal result or a replacement row is never
+rewritten by delayed enqueue cleanup. A store failure retains the claim for
+reconciliation, and a custom store without immutable row proof fails closed.
+
+For an admitted attempt, use normal cancel/reclaim procedures rather than
+manually setting its thread to idle. For a definite pre-dispatch rejection,
+conditional completion releases the thread and finalizes bookkeeping once.
+The caller still receives the original delivery error. Database insertion and
+queue publication remain separate; automatic retries with a fresh run ID and
+uncertain external effects still need caller reconciliation and downstream
+idempotency. This correction adds no migration, protocol field or new setting.
+Upgrade every HTTP and cron-serving replica to obtain the protection on each
+enqueue path. Custom Go stores must enforce `FailUnstarted` and
+`ExpectedIncarnationID` inside the completion transaction and pass the shared
+conformance suite; these conditions are required. See the [transaction and regression notes](internal/atomic-results-and-identities.md#enqueue-acknowledgement-is-not-execution-proof-unreleased).
+
 ## Static graph schema publication recovery (Unreleased)
 
 This checkout adds automatic recovery for the default-tenant static Python
@@ -348,6 +373,21 @@ when a parent was future-dated. Upgrade does not reconstruct old commit order or
 change historical payloads. Before resuming sensitive retained conversations,
 compare the selected checkpoint with current thread state and repair any known
 mismatch explicitly.
+
+Opaque checkpoint record fencing is Unreleased/current-source. Upgrade every
+control-plane replica before relying on it. Queued or active assignments from
+older planes may lack the original record identity, especially on Mongo; drain
+those assignments and submit fresh dispatches. Missing identity fails with
+`403 run_binding_required`, and an already authorized request retaining a
+deleted record's binding fails with `403 run_incarnation_mismatch`. This adds no
+client-echoed incarnation proof for fresh requests. Use fresh operation IDs
+while old workers or RPCs may still send; do not treat deletion as revocation
+of every possible stale message. Do not fill an old assignment from the current
+run row or bypass the fence after a denial. No database migration is required:
+SQL reuses `incarnation_id`, and Mongo uses its existing nonzero ObjectID. A
+manually imported Mongo run with another `_id` type is refused for explicit
+operator repair, without an empty-identity fallback. Blob ETags retain their
+existing conflict behavior. See the [engineering contract](internal/connector-action-evidence.md#opaque-checkpoint-record-fencing-unreleased).
 
 ## Tenant review upgrade
 

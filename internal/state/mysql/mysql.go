@@ -682,11 +682,9 @@ func (s *Store) baselineUp(ctx context.Context, db migrate.DB) error {
 		) ENGINE=InnoDB CHARSET=utf8mb4`,
 
 		// Multi-instance-safe claiming for cron-expression scheduling --
-		// this table plus TryClaimCronFire's INSERT ...
-		// ON DUPLICATE KEY UPDATE (a no-op update, since the row
-		// existing at all is the signal another instance already
-		// claimed this fire) is the MySQL equivalent of Postgres's
-		// claim window.
+		// this table plus TryClaimCronFire's atomic INSERT and precise
+		// duplicate-key classification provide the same claim window
+		// as Postgres, independent of affected-row driver options.
 		`CREATE TABLE IF NOT EXISTS cron_claims (
 			tenant_id     VARCHAR(255) NOT NULL DEFAULT 'default',
 			schedule_name VARCHAR(255) NOT NULL,
@@ -2362,37 +2360,22 @@ func (s *Store) DeleteCronSchedule(ctx context.Context, name string) error {
 	return err
 }
 
-// TryClaimCronFire's ON DUPLICATE KEY UPDATE is a genuine no-op update
-// (schedule_name = schedule_name) -- matches the schema's own doc
-// comment: the claim row existing at all, not what the update sets it
-// to, is the signal that another instance already claimed this exact
-// (tenant, schedule, fire_time) triple. MySQL's documented
-// affected-rows semantics for INSERT ... ON DUPLICATE KEY UPDATE are
-// what make this work without a race: 1 for a genuine new insert, 0
-// for an update whose SET clause doesn't change any column value
-// (confirmed against the MySQL reference manual and exercised directly
-// by TestCron_ClaimFireExactlyOnce) -- so RowsAffected() > 0 means
-// "this call was the one that inserted the row," never ambiguous with
-// "the row already existed and nothing changed." This depends on the
-// go-sql-driver/mysql DSN NOT setting clientFoundRows=true (its
-// default) -- that flag makes MySQL report "matched" rows rather than
-// "changed" rows, which would make a no-op ON DUPLICATE KEY UPDATE
-// report RowsAffected()=1 too, and every racer in
-// TestCron_ConcurrentClaimOnlyOneWins would "win."
+// TryClaimCronFire atomically inserts the exact tenant/schedule/fire key.
+// Only a native duplicate-key error means another claim already exists.
+// Avoid a no-op update: clientFoundRows=true counts matched rows and would
+// otherwise make a losing claim indistinguishable from a winning insert.
 func (s *Store) TryClaimCronFire(ctx context.Context, scheduleName string, fireTime time.Time) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, `
 		INSERT INTO cron_claims (tenant_id, schedule_name, fire_time, claimed_at)
 		VALUES (?, ?, ?, ?)
-		ON DUPLICATE KEY UPDATE schedule_name = schedule_name
 	`, tenant.FromContext(ctx), scheduleName, fireTime.UTC(), time.Now().UTC())
+	if isDuplicateKeyError(err) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
-		return false, err
-	}
-	return n > 0, nil
+	return true, nil
 }
 
 func (s *Store) ReleaseCronClaim(ctx context.Context, scheduleName string, fireTime time.Time) error {
@@ -2548,7 +2531,7 @@ func (s *Store) putOpaqueCheckpoint(ctx context.Context, threadID, checkpointID 
 	defer tx.Rollback() //nolint:errcheck // no-op if committed
 	if binding != nil {
 		driver := sqlcompletion.DatabaseSQL(s.db, "mysql")
-		if err := driver.LockRunCheckpoint(ctx, sqlcompletion.WrapSQLTransaction(tx), *binding); err != nil {
+		if err := driver.LockOpaqueCheckpoint(ctx, sqlcompletion.WrapSQLTransaction(tx), *binding); err != nil {
 			return 0, err
 		}
 	} else if _, err := s.completionDriver().LockThread(ctx, sqlcompletion.WrapSQLTransaction(tx), threadID); err != nil {

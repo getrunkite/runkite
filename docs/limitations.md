@@ -8,6 +8,14 @@ The [source integration guide](integrations.md#unreleased-current-source) maps
 checkout additions after published v0.9.0. Their presence on `main` does not
 change an existing binary, image, wheel or npm install.
 
+- Opaque checkpoint PUT/DELETE pin the original stored run record as well as
+  generation and terminal status, so a slow request cannot borrow authority
+  after same-ID recreation. Missing dispatch identity is rejected. SQL reuses
+  its incarnation; Mongo privately uses a nonzero ObjectID, with other `_id`
+  types refused. Upgrade all planes and drain older assignments without this
+  snapshot. This does not change checkpoint reads, blob CAS, direct framework
+  database writes or Mongo's SQL-only capability boundaries. See the
+  [record-fencing contract](internal/connector-action-evidence.md#opaque-checkpoint-record-fencing-unreleased).
 - Scoped specialist observation is agent-wide on exact public GET/wait and
   requires SQL run references. It is not requester-private ownership, broad
   read authority, streaming or cancellation. First reference acquisition cannot
@@ -249,6 +257,15 @@ cancellation or rollback. This does not atomically join run insertion and queue
 enqueue or provide exactly-once external effects. It also does not make public
 MCP interchangeable with a run-bound connector proxy. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090).
+
+**Enqueue acknowledgement errors (Unreleased).** Queue acceptance can precede a
+delivery error. Conditional rollback now preserves a committed result or an
+admitted worker and fences deletion/recreation of its original row. Only a
+pending, never-started original run may become `enqueue failed`; store failure
+retains its claim. The caller still receives its error, so reconcile the
+original run before starting another operation. This is not an atomic
+database/queue publish or external-effect idempotency. See
+[recovery guidance](ops-runbook.md#enqueue-acknowledgement-failures-unreleased).
 
 ## Deep dive
 

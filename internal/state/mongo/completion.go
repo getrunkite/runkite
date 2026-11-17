@@ -52,6 +52,9 @@ func (s *Store) completeRunInTransaction(ctx context.Context, c *state.RunComple
 		if err != nil {
 			return err
 		}
+		if c.ExpectedIncarnationID != "" && c.ExpectedIncarnationID != state.RunIdentity(run) {
+			return &state.ErrConflict{Resource: "run", ID: c.RunID, Reason: "retained run incarnation changed"}
+		}
 		resolved := state.ResolveCompletion(run.Metadata, c)
 		c := state.WithoutDurableUsage(resolved)
 		result = state.CheckCompletion(run.Metadata, run.Status, c)

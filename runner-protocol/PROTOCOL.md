@@ -315,10 +315,24 @@ Run-bound PUT and DELETE validate the durable run generation and terminal status
 in the same transaction as the blob mutation, serialized with attempt advancement
 and completion. Authorization at request start is insufficient for a slow upload.
 An obsolete attempt receives `403 run_generation_mismatch`; a completed, canceled
-or missing run receives `403 run_not_inflight`. Blob ETags still protect against
+or missing run receives `403 run_not_inflight`. Unreleased current source also
+requires the captured stored record identity. An already authorized request
+retaining an old binding across deletion/recreation, even with the same run ID
+and generation, receives `403 run_incarnation_mismatch`; a missing
+identity receives `403 run_binding_required`. SQL uses its existing incarnation,
+and Mongo uses its existing immutable ObjectID privately. This does not enable
+Mongo's SQL-only public run references, governance or durable usage APIs.
+Blob ETags still protect against
 concurrent changes within an allowed attempt and return `412` on conflict.
 Existing run-binding headers are unchanged. These checks apply to HTTP proxy
 state; direct framework database writes remain owned by the framework driver.
+This adds no client-echoed incarnation proof. A fresh request still uses existing
+runner-pool and workload-owner authorization. Use fresh operation IDs while old
+workers or RPCs can still send requests; this snapshot fence does not make
+reusing a deleted run ID safe against every stale message.
+Upgrade all control-plane replicas before relying on the new fence. Drain queued
+or active assignments lacking the identity and submit fresh dispatches; the
+plane never fills a missing old snapshot from a potentially replacement row.
 
 **Save checkpoint:**
 ```

@@ -26,6 +26,14 @@ func runBoundCheckpointTests(t *testing.T, factory StoreFactory) {
 		if ok, err := s.BeginRunAttempt(ctx, binding.RunID, generation); err != nil || !ok {
 			t.Fatalf("begin attempt: accepted=%t err=%v", ok, err)
 		}
+		run, err := s.GetRun(ctx, binding.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		binding.RecordIdentity = state.RunIdentity(run)
+		if binding.RecordIdentity == "" {
+			t.Fatal("run has no immutable record identity")
+		}
 		return s, ctx, binding
 	}
 	rejected := func(t *testing.T, err error, reason string) {
@@ -115,6 +123,63 @@ func runBoundCheckpointTests(t *testing.T, factory StoreFactory) {
 		}
 		if _, err := s.GetOpaqueCheckpoint(ctx, binding.ThreadID, "adapter-state"); !errors.As(err, new(*state.ErrNotFound)) {
 			t.Fatalf("delete did not remove checkpoint: %v", err)
+		}
+	})
+	t.Run("recreated_record_rejects_old_and_missing_identity", func(t *testing.T) {
+		s, ctx, old := seed(t, 1)
+		original, err := s.GetRun(ctx, old.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: old.RunID, Generation: 1, Status: models.RunStatusSuccess}); err != nil || !result.Applied {
+			t.Fatal(result, err)
+		}
+		if err := s.DeleteRun(ctx, old.RunID); err != nil {
+			t.Fatal(err)
+		}
+		// Deliberately reuse the timestamps too. Time is not a row identity.
+		replacement := &models.Run{RunID: old.RunID, ThreadID: old.ThreadID, AgentID: original.AgentID, Status: models.RunStatusPending, CreatedAt: original.CreatedAt, UpdatedAt: original.UpdatedAt, Metadata: map[string]interface{}{}}
+		if err := s.CreateRun(ctx, replacement); err != nil {
+			t.Fatal(err)
+		}
+		if accepted, err := s.BeginRunAttempt(ctx, old.RunID, old.Generation); err != nil || !accepted {
+			t.Fatal(accepted, err)
+		}
+		replacement, err = s.GetRun(ctx, old.RunID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		current := old
+		current.RecordIdentity = state.RunIdentity(replacement)
+		if current.RecordIdentity == "" || current.RecordIdentity == old.RecordIdentity {
+			t.Fatal("replacement reused record identity")
+		}
+		version, err := s.PutBoundOpaqueCheckpoint(ctx, current, "adapter-state", []byte("current"), "test", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, match := range []*int64{nil, &version} {
+			_, err := s.PutBoundOpaqueCheckpoint(ctx, old, "adapter-state", []byte("stale"), "test", match)
+			rejected(t, err, "run_incarnation_mismatch")
+		}
+		create := state.OpaqueCreateOnly
+		_, err = s.PutBoundOpaqueCheckpoint(ctx, old, "new-state", []byte("stale"), "test", &create)
+		rejected(t, err, "run_incarnation_mismatch")
+		rejected(t, s.DeleteBoundOpaqueCheckpoint(ctx, old, "adapter-state"), "run_incarnation_mismatch")
+		missing := current
+		missing.RecordIdentity = ""
+		_, err = s.PutBoundOpaqueCheckpoint(ctx, missing, "adapter-state", nil, "test", nil)
+		rejected(t, err, "run_binding_required")
+		rejected(t, s.DeleteBoundOpaqueCheckpoint(ctx, missing, "adapter-state"), "run_binding_required")
+		if blob, err := s.GetOpaqueCheckpoint(ctx, old.ThreadID, "adapter-state"); err != nil || string(blob.Data) != "current" || blob.Version != version {
+			t.Fatalf("replacement state changed: blob=%+v err=%v", blob, err)
+		}
+		// Trusted completion uses the same immutable identity, including Mongo.
+		if _, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: old.RecordIdentity, RunID: old.RunID, Generation: 1, Status: models.RunStatusSuccess}); err == nil {
+			t.Fatal("old record identity completed the replacement")
+		}
+		if result, err := s.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: current.RecordIdentity, RunID: old.RunID, Generation: 1, Status: models.RunStatusSuccess}); err != nil || !result.Applied {
+			t.Fatal(result, err)
 		}
 	})
 }
