@@ -506,13 +506,25 @@ pools. Published v0.6.1 artifacts do not implement these controls.
 - Pools isolate fleet routing and credentials, not hostile code inside one worker.
   Helm egress manifests need an enforcing CNI. The external OpenShell JSONL bridge
   remains experimental, with explicit immutable image/policy and durable uncertain
-  launch handling. A disposable SQLite plane/installed pooled worker/OpenShell
+  launch handling. Historical v0.7.0 SQLite plane/installed pooled worker/OpenShell
   0.1.8 lifecycle qualification and a separate kind 0.33.0/Kubernetes 1.37.0
   default-kindnet egress qualification have passed. These do not qualify a
   different runtime/kernel/CNI, cloud metadata service, hostile workloads sharing
-  one worker, external multi-replica workload or live model/provider. Existing SDK
+  one worker, the later combined multi-replica profile or live model/provider. Existing SDK
   adapters do not become sandboxed merely by selecting a pool. See the
   [exact qualification scope](internal/constrained-execution.md#verification-and-remaining-qualification).
+- Combined external-runtime HA qualification is not missing: the v0.8.0 wrapper
+  already exercises two Postgres/Redis planes, TLS, installed-worker identity,
+  reclaim/receipt replay, cancellation, partial usage and bounded failover, with
+  a recorded historical hosted pass. Unreleased fixture hardening adds explicit
+  environment and structured acceptance controls plus a routine-cancellation
+  sandbox-absence observation before final cleanup. Current candidate evidence
+  must be measured separately. Repetition covers the partial-usage/failover
+  scenario, not all lifecycle cases or sustained load. Wrapper cleanup does not
+  establish worker cleanup after every crash; uncertain intents still need
+  reconciliation. The profile remains experimental, with independent RFE #52
+  assessment, production PKI rotation and long-running production soak outside
+  these bounded results. See [the precise combined scope](internal/constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased).
 - The Unreleased [effective-policy qualifier](internal/openshell-effective-policy.md)
   optionally captures matching current/loaded sandbox policy and compares it
   with the original boundary using the official OpenShell 0.1.8 checker.

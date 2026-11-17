@@ -508,11 +508,20 @@ settlement. Reports remain workload claims. Zero recorded spend cannot establish
 free execution, and unreported calls cannot enforce a trustworthy provider-spend
 ceiling. Keep provider accounting and limits; native SDK usage remains separate.
 
-Disposable qualification has passed using an installed Python runner, real SQLite
+Historical v0.7.0 qualification passed using an installed Python runner, real SQLite
 plane, pooled worker and OpenShell 0.1.8 with Landlock `hard_requirement`, including
 state/reclaim/cancel and confirmed cleanup. The chart's egress rules separately
 passed on kind 0.33.0/Kubernetes 1.37.0 with default kindnet. This does not make
 existing SDK adapters automatically compatible or qualify another deployment.
+The separate v0.8.0 combined fixture already exercises two real Postgres/Redis
+planes, HTTP/gRPC and gateway TLS, installed-parent identity, reclaim/receipt
+replay, cancellation, partial usage and bounded failover cycles. Its historical
+hosted pass is recorded in the [combined qualification](internal/constrained-execution.md#hosted-linux-evidence-november-15-2026).
+Unreleased source hardens fixture environment isolation, structured acceptance
+and worker-cancellation absence observations before final cleanup. That candidate
+needs its own measured receipts; a prior pass or zero process exit is not new
+qualification. Neither path supplies production gateway HA, continuous PKI
+rotation, universal SDK containment or independent assessment.
 Follow the [example](../examples/isolated_agent/README.md),
 [design and qualification record](internal/constrained-execution.md) and
 [operator rollout](ops-runbook.md#security-completion-upgrade). Published v0.6.1

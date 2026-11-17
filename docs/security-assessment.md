@@ -43,6 +43,11 @@ each result. Do not project a result from one version or backend onto another.
 - [RFE #47](https://github.com/getrunkite/runkite/issues/47): a combined disposable
   multi-plane, SQL/Redis, TLS and external-worker qualification. Record the
   measured runtime, network implementation, faults and duration.
+  That combined fixture already exists and has historical hosted evidence.
+  The current [fixture-hardening follow-up](internal/constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased)
+  adds deliberate child environments, shared structured acceptance and measured
+  routine-cancellation absence before final cleanup. Its candidate needs actual
+  executed evidence; this is not a missing HA subsystem or a self-closed RFE.
   The Unreleased [effective-policy fixture](internal/openshell-effective-policy.md)
   adds a separate current/loaded snapshot and pinned-checker comparison around
   real isolated execution. Its local pass does not expand the historical HA
@@ -237,7 +242,21 @@ skipped qualification success. The real fixture's passing evidence, requested
 cycle count and confirmed cleanup are required before success. A configured
 workflow is not evidence that its GitHub runner has passed. Record the actual
 run URL, source revision, versions, elapsed time, faults and retained outputs
-when it is first executed.
+for the candidate being qualified. The
+[historical hosted pass](internal/constrained-execution.md#hosted-linux-evidence-november-15-2026)
+already exists; it does not automatically qualify later fixture hardening.
+
+Unreleased local and hosted qualification share structured evidence validation
+rather than accepting a process exit or inner pass flag alone. Fixture child
+environments exclude ambient OTLP/provider configuration. Cancellation evidence
+must first prove workload activity, matching live generation and exact sandbox
+presence, then observe absence through a bounded read-only query
+before the final fixture sweep, without deleting it from the assertion. Keep
+this distinct from wrapper cleanup and from unresolved orphans after uncertain
+launch/parent death. Neither evidence path certifies the host, provider billing,
+production runtime HA or independent assessment. RFE #47 acceptance and the
+separate RFE #52 reviewer assessment remain open until their actual evidence is
+reviewed; maintainer qualification cannot stand in for that external review.
 
 Run local qualification against the local Unix Docker socket selected by
 `RUNKITE_TEST_DOCKER_SOCKET` (default `/var/run/docker.sock`). The wrapper pins

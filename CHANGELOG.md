@@ -117,6 +117,13 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
   report only duplicate-key conflicts as lost claims, preserving exact tenant,
   schedule and fire-time scope without changing valid DSN options or schema.
 
+- Harden the existing combined isolated-workload HA fixture for RFE #47 with
+  deliberate child environments, shared structured evidence acceptance,
+  bounded local execution/cleanup and read-only worker-cancellation absence
+  observations before the final fixture sweep. Historical qualification and
+  independent RFE #52 assessment remain separate; no new production runtime or
+  cleanup reconciler is introduced.
+
 - Reject malformed cron timezone prefixes without a parser panic, stop on zero
   or non-advancing next times, and retain the local not-due anchor for `@every`
   so intervals longer than the scheduler tick can become due. Calendar

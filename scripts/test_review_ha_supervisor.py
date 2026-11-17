@@ -2,6 +2,8 @@
 """Fixture-only checks for process ownership and HA wrapper interruption."""
 
 import fcntl
+import importlib.util
+import io
 import json
 import os
 import signal
@@ -10,10 +12,15 @@ import sys
 import tempfile
 import time
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
+from unittest import mock
 
 SCRIPTS = Path(__file__).resolve().parent
 SUPERVISOR = SCRIPTS / "review-ha-supervisor.py"
+SPEC = importlib.util.spec_from_file_location("review_ha_supervisor", SUPERVISOR)
+SUPERVISOR_MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(SUPERVISOR_MODULE)
 
 
 def descendant_running(marker):
@@ -117,6 +124,146 @@ FINISH
         process = self.start([sys.executable, "-c", "import sys; print('fixture failed'); sys.exit(7)"])
         output, _ = process.communicate(timeout=8)
         self.assertEqual(process.returncode, 7, output)
+
+    def run_with_denied_group_cleanup(self, command, killpg, timeout=None):
+        arguments = [str(SUPERVISOR), "--log", str(self.directory / "denied.log")]
+        if timeout is not None:
+            arguments.extend(["--timeout", str(timeout)])
+        arguments.extend(["--", *command])
+        diagnostics = io.StringIO()
+        popen = subprocess.Popen
+
+        def start(*args, **kwargs):
+            process = popen(*args, **kwargs)
+            self.processes.append(process)
+            return process
+
+        with (
+            mock.patch.object(sys, "argv", arguments),
+            mock.patch.object(SUPERVISOR_MODULE.signal, "signal"),
+            mock.patch.object(SUPERVISOR_MODULE.os, "killpg", side_effect=killpg),
+            mock.patch.object(SUPERVISOR_MODULE.subprocess, "Popen", side_effect=start),
+            mock.patch.object(SUPERVISOR_MODULE, "forward_available") as forward,
+            redirect_stderr(diagnostics),
+        ):
+            status = SUPERVISOR_MODULE.main()
+        self.assertEqual(diagnostics.getvalue(), "owned process-group cleanup unconfirmed\n")
+        self.assertEqual(forward.call_args.kwargs["limit"], 1 << 20)
+        self.assertIsNotNone(self.processes[-1].poll(), "held child survived direct cleanup fallback")
+        return status
+
+    def test_denied_cleanup_cannot_turn_a_success_into_pass(self):
+        status = self.run_with_denied_group_cleanup(
+            [sys.executable, "-c", "raise SystemExit(0)"], PermissionError("private host diagnostic")
+        )
+        self.assertEqual(status, 1)
+
+    def test_denied_initial_term_preserves_timeout_and_kills_held_child(self):
+        started = time.monotonic()
+        status = self.run_with_denied_group_cleanup(
+            [sys.executable, "-c", "import time; time.sleep(300)"], PermissionError(), timeout=0.1
+        )
+        self.assertEqual(status, 124)
+        self.assertLess(time.monotonic() - started, 3)
+
+    def test_denied_existence_probe_after_term_preserves_timeout(self):
+        killpg = os.killpg
+
+        def deny_probe(group, number):
+            if number == 0:
+                raise PermissionError("private host diagnostic")
+            return killpg(group, number)
+
+        status = self.run_with_denied_group_cleanup(
+            [sys.executable, "-c", "import time; time.sleep(300)"], deny_probe, timeout=0.1
+        )
+        self.assertEqual(status, 124)
+
+    def test_group_existence_permission_denial_remains_unknown_after_reap(self):
+        leader = mock.Mock()
+        leader.poll.return_value = 0
+        with (
+            mock.patch.object(SUPERVISOR_MODULE.os, "killpg", side_effect=[None, PermissionError()]),
+            self.assertRaises(PermissionError),
+        ):
+            SUPERVISOR_MODULE.cleanup_group(os.getpgrp() + 1000, grace=110, leader=leader)
+        leader.poll.assert_called_once_with()
+
+    def test_deadline_terminates_owned_descendants_and_reports_timeout(self):
+        command, marker = self.descendant_command()
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                str(SUPERVISOR),
+                "--timeout",
+                "1",
+                "--timeout-grace",
+                "0.1",
+                "--log",
+                str(self.directory / "deadline.log"),
+                "--",
+                *command,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.processes.append(process)
+        output, _ = process.communicate(timeout=6)
+        self.assertEqual(process.returncode, 124, output)
+        self.assert_child_stopped(marker)
+
+    def test_deadline_options_reject_nonfinite_or_unbounded_grace(self):
+        for option, value in (
+            ("--timeout", "nan"),
+            ("--timeout", "inf"),
+            ("--timeout", "0"),
+            ("--timeout-grace", "-1"),
+            ("--timeout-grace", "121"),
+        ):
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SUPERVISOR),
+                    option,
+                    value,
+                    "--log",
+                    str(self.directory / "invalid.log"),
+                    "--",
+                    sys.executable,
+                    "-c",
+                    "raise SystemExit(91)",
+                ],
+                capture_output=True,
+                timeout=5,
+            )
+            self.assertEqual(result.returncode, 2)
+
+    def test_graceful_term_does_not_wait_for_the_full_long_grace(self):
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                str(SUPERVISOR),
+                "--timeout",
+                "0.3",
+                "--timeout-grace",
+                "110",
+                "--log",
+                str(self.directory / "graceful.log"),
+                "--",
+                sys.executable,
+                "-c",
+                "import time; time.sleep(300)",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        self.processes.append(process)
+        started = time.monotonic()
+        output, _ = process.communicate(timeout=5)
+        self.assertEqual(process.returncode, 124, output)
+        self.assertLess(time.monotonic() - started, 4)
 
     def test_leader_exit_reaps_its_descendant_only(self):
         unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(300)"], start_new_session=True)

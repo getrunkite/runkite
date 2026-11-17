@@ -21,6 +21,9 @@ import time
 import uuid
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from isolated_fixture_environment import fixture_inputs, sterile_environment  # noqa: E402
+
 GATEWAY = "ghcr.io/nvidia/openshell/gateway@sha256:d66352a54c680b652e5ddd7d19b9c1189568d18016f360b9b8c64014f13d89c4"
 SANDBOX = "ghcr.io/nvidia/openshell/sandbox@sha256:f0fe7dbf18d833acb5da99c405231124718f23b524aa8e3c0108e6f37530033b"
 SUPERVISOR = (
@@ -81,19 +84,31 @@ def fixture_network(host, port, tls):
     raise ValueError("the local runtime fixture supports native Linux or macOS engines only")
 
 
-def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=False, environment=None):
+def cleanup_fixture(
+    base, cli, log, directory, *, timeout=30, cleanup_timeout=90, preserve_recovery=False, environment=None
+):
     """Confirm owned runtime cleanup before discarding private recovery data."""
     errors = []
     runtime_empty = False
-    deadline = time.monotonic() + timeout
+    started = time.monotonic()
+    cleanup_deadline = started + cleanup_timeout
+    # Reserve time for infrastructure removal even if sandbox deletion stalls.
+    deadline = min(started + timeout, cleanup_deadline - 60)
     requested = set()
+
+    def remaining(end, cap):
+        value = end - time.monotonic()
+        if value <= 0:
+            raise subprocess.TimeoutExpired("owned fixture cleanup", cap)
+        return min(cap, value)
+
     while time.monotonic() < deadline:
         try:
             result = subprocess.run(
                 [*cli, "sandbox", "list", "--output", "json"],
                 capture_output=True,
                 text=True,
-                timeout=15,
+                timeout=remaining(deadline, 15),
                 env=environment,
             )
             if result.returncode != 0:
@@ -114,29 +129,51 @@ def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=
                     continue
                 if name not in requested:
                     deleted = subprocess.run(
-                        [*cli, "sandbox", "delete", name], stdout=log, stderr=log, timeout=20, env=environment
+                        [*cli, "sandbox", "delete", name],
+                        stdout=log,
+                        stderr=log,
+                        timeout=remaining(deadline, 20),
+                        env=environment,
                     )
                     if deleted.returncode != 0:
                         errors.append("runtime_delete_failed")
                     requested.add(name)
             if errors:
                 break
-            time.sleep(0.25)
+            time.sleep(min(0.25, max(0, deadline - time.monotonic())))
         except (OSError, subprocess.TimeoutExpired, ValueError, TypeError, AttributeError):
             errors.append("runtime_cleanup_unconfirmed")
             break
     if not runtime_empty and not errors:
         errors.append("runtime_delete_not_confirmed")
     try:
-        subprocess.run([*base, "logs", "--no-color"], stdout=log, stderr=log, timeout=20)
+        subprocess.run(
+            [*base, "logs", "--no-color"],
+            stdout=log,
+            stderr=log,
+            timeout=remaining(cleanup_deadline, 5),
+            env=environment,
+        )
     except (OSError, subprocess.TimeoutExpired):
         errors.append("runtime_log_capture_failed")
     try:
-        down = subprocess.run([*base, "down", "--volumes", "--remove-orphans"], stdout=log, stderr=log, timeout=60)
+        down = subprocess.run(
+            [*base, "down", "--volumes", "--remove-orphans"],
+            stdout=log,
+            stderr=log,
+            timeout=remaining(cleanup_deadline, 45),
+            env=environment,
+        )
         if down.returncode != 0:
             errors.append("fixture_infrastructure_down_failed")
-        remaining = subprocess.run([*base, "ps", "--all", "--quiet"], capture_output=True, text=True, timeout=15)
-        if remaining.returncode != 0 or remaining.stdout.strip():
+        observed = subprocess.run(
+            [*base, "ps", "--all", "--quiet"],
+            capture_output=True,
+            text=True,
+            timeout=remaining(cleanup_deadline, 5),
+            env=environment,
+        )
+        if observed.returncode != 0 or observed.stdout.strip():
             errors.append("fixture_infrastructure_removal_unconfirmed")
     except (OSError, subprocess.TimeoutExpired):
         errors.append("fixture_infrastructure_removal_unconfirmed")
@@ -149,12 +186,12 @@ def cleanup_fixture(base, cli, log, directory, *, timeout=30, preserve_recovery=
     return {"confirmed": confirmed, "reason_codes": sorted(set(errors))}
 
 
-def make_gateway_pki(directory):
+def make_gateway_pki(directory, *, environment=None):
     """Issue disposable certificates without touching user trust or CLI state."""
     directory.mkdir(mode=0o700)
 
     def openssl(*args):
-        result = subprocess.run(["openssl", *args], cwd=directory, capture_output=True, timeout=30)
+        result = subprocess.run(["openssl", *args], cwd=directory, capture_output=True, timeout=30, env=environment)
         if result.returncode != 0:
             raise RuntimeError("owned gateway fixture certificate generation failed")
 
@@ -271,7 +308,7 @@ def qualify_gateway_tls(base, cli, environment, directory, pki, log, report, *, 
             report["cases"].append(label + " rejected without disabling verification")
             wait_for_gateway(cli, environment, timeout=15)
         return
-    subprocess.run([*base, "stop", "gateway"], check=True, stdout=log, stderr=log, timeout=45)
+    subprocess.run([*base, "stop", "gateway"], check=True, stdout=log, stderr=log, timeout=45, env=environment)
     try:
         try:
             result = subprocess.run(
@@ -283,7 +320,7 @@ def qualify_gateway_tls(base, cli, environment, directory, pki, log, report, *, 
             pass
         report["cases"].append("gateway outage rejects management requests instead of downgrading to plaintext")
     finally:
-        subprocess.run([*base, "up", "-d", "gateway"], check=True, stdout=log, stderr=log, timeout=90)
+        subprocess.run([*base, "up", "-d", "gateway"], check=True, stdout=log, stderr=log, timeout=90, env=environment)
     wait_for_gateway(cli, environment)
     report["cases"].append("authorized TLS management recovers after bounded gateway restart")
     report["passed"] = True
@@ -312,6 +349,17 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix="runtime-", dir=output))
     directory.chmod(0o700)
+    inputs = fixture_inputs(os.environ)
+    inputs.pop("RUNKITE_ISOLATED_HA_PG_PASSWORD", None)
+    plugins = {
+        name: Path(inputs[key])
+        for name, key in (
+            ("compose", "RUNKITE_TEST_DOCKER_COMPOSE_PLUGIN"),
+            ("buildx", "RUNKITE_TEST_DOCKER_BUILDX_PLUGIN"),
+        )
+        if key in inputs
+    }
+    runtime_environment = sterile_environment(directory / "environment", docker_plugins=plugins)
     data = directory / "data"
     data.mkdir()
     identity = "rk-isolated-" + uuid.uuid4().hex[:16]
@@ -322,7 +370,7 @@ def main():
     endpoint = f"{'https' if args.tls else 'http'}://127.0.0.1:{port}"
     pki = data / "gateway-pki"
     if args.tls:
-        make_gateway_pki(pki)
+        make_gateway_pki(pki, environment=runtime_environment)
     gateway_security = (
         f'''disable_tls = false
 enable_loopback_service_http = false
@@ -408,7 +456,7 @@ app_armor_profile = "Unconfined"
     base = [*docker, "compose", "--env-file", "/dev/null", "--project-name", identity, "-f", str(compose)]
     cli = [str(Path(args.cli).resolve()), "--gateway-endpoint", endpoint]
     cli_environment = {
-        **os.environ,
+        **runtime_environment,
         "XDG_CONFIG_HOME": str(directory / "cli-config"),
         "XDG_DATA_HOME": str(directory / "cli-data"),
         "XDG_STATE_HOME": str(directory / "cli-state"),
@@ -433,8 +481,12 @@ app_armor_profile = "Unconfined"
     signal.signal(signal.SIGINT, on_signal)
     log = (output / "runtime.log").open("wb")
     try:
-        subprocess.run([*base, "run", "--rm", "init"], check=True, stdout=log, stderr=log, timeout=120)
-        subprocess.run([*base, "up", "-d", "gateway"], check=True, stdout=log, stderr=log, timeout=120)
+        subprocess.run(
+            [*base, "run", "--rm", "init"], check=True, stdout=log, stderr=log, timeout=120, env=runtime_environment
+        )
+        subprocess.run(
+            [*base, "up", "-d", "gateway"], check=True, stdout=log, stderr=log, timeout=120, env=runtime_environment
+        )
         wait_for_gateway(cli, cli_environment)
         if args.tls:
             qualify_gateway_tls(base, cli, cli_environment, directory, pki, log, tls_report)
@@ -442,7 +494,7 @@ app_armor_profile = "Unconfined"
             subprocess.check_output(
                 [*docker, "build", "-q", str(root / "examples/isolated_agent")],
                 cwd=root,
-                env={**os.environ, "BUILDX_CONFIG": str(directory / "buildx")},
+                env=runtime_environment,
                 timeout=240,
                 text=True,
             )
@@ -464,14 +516,18 @@ app_armor_profile = "Unconfined"
             ],
             check=True,
             timeout=30,
+            env=runtime_environment,
         )
         environment = {
             **cli_environment,
+            **inputs,
+            "PYTHONPATH": str(root / "python"),
             "RUNKITE_TEST_ISOLATED_CLI": cli[0],
             "RUNKITE_TEST_ISOLATED_GATEWAY": endpoint,
             "RUNKITE_TEST_ISOLATED_IMAGE": image,
             "RUNKITE_TEST_ISOLATED_OUTPUT": str(output / "managed-evidence.json"),
             "RUNKITE_TEST_ISOLATED_GATEWAY_TLS": "1" if args.tls else "0",
+            "RUNKITE_TEST_ISOLATED_GATEWAY_CONFIG": str(directory / "cli-config"),
         }
         (output / "runtime-fixture.json").write_text(
             json.dumps(
@@ -499,13 +555,20 @@ app_armor_profile = "Unconfined"
                 str(root / "scripts/review-ha-supervisor.py"),
                 "--log",
                 str(output / "managed-test.log"),
+                "--timeout",
+                "900",
+                "--timeout-grace",
+                "2",
                 "--",
                 *command,
             ],
             cwd=root,
             env=environment,
         )
-        status = guard.wait()
+        try:
+            status = guard.wait(timeout=905)
+        except subprocess.TimeoutExpired:
+            status = 124
         if args.tls and status == 0:
             qualify_gateway_tls(base, cli, cli_environment, directory, pki, log, tls_report, outage=True)
     except KeyboardInterrupt:

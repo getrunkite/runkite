@@ -903,11 +903,11 @@ cluster with an enforcing CNI before claiming egress protection. The experimenta
 OpenShell profile requires a compatible JSONL workload, external pinned runtime
 and policy. A retained launch intent without a committed receipt is uncertain:
 inspect the owned sandbox/effects and cleanup before explicitly starting fresh
-work. Local qualification passed with an installed Python runner, real SQLite
+work. Historical v0.7.0 qualification passed with an installed Python runner, real SQLite
 plane and OpenShell 0.1.8, and separately with kind 0.33.0/Kubernetes 1.37.0 default
 kindnet. Repeat these checks on the intended runtime/kernel/CNI; neither result
-qualifies cloud metadata, unchanged SDKs, external multi-replica workloads or live
-providers. A failed fixture cleanup exits nonzero and preserves its private
+qualifies cloud metadata, unchanged SDKs, the later combined multi-replica
+profile or live providers. A failed fixture cleanup exits nonzero and preserves its private
 recovery directory. See [qualification procedures and evidence scope](internal/constrained-execution.md).
 Published v0.7.0 has no supported isolated usage-reporting contract.
 v0.8.0 adds [durable cumulative reports](internal/isolated-usage.md). Upgrade the
@@ -917,7 +917,7 @@ Unknown usage and an explicit reported zero are different states. Counters and
 costs are workload claims, even when the reporting worker has a verified identity.
 Keep provider accounting and quotas to bound unreported or dishonest usage.
 
-The new combined fixture is `scripts/test-isolated-ha.sh`. It owns disposable
+The existing v0.8.0 combined fixture is `scripts/test-isolated-ha.sh`. It owns disposable
 Postgres/Redis, two TLS planes and an external runtime, uses the installed runner
 wheel, and supports one to twenty bounded fault cycles. See the constrained
 execution note for its exact inputs and qualification limits. A fixture pass
@@ -930,6 +930,28 @@ authenticated OpenShell gateway. The gateway's local CA/client bundle stays in
 private task-owned state. The old standalone fixture still defaults to loopback
 HTTP unless `--tls` is explicitly selected. Review the separate gateway TLS
 preflight/outage report as well as workload and cleanup evidence.
+The three-cycle hosted pass on revision `96051cc` is historical evidence for
+that combined path, not a result for every later source revision. See the
+[actual hosted record](internal/constrained-execution.md#hosted-linux-evidence-november-15-2026).
+
+For the Unreleased RFE #47 hardening, use the prepared exact candidate binary,
+runner wheel and checksum-verified CLI with the existing wrapper. Child
+processes use a deliberate fixture environment rather than inheriting ambient
+OTLP exporters or provider settings. Shared local/hosted evidence validation,
+bounded execution and confirmed cleanup determine success together. Do not
+approve an inner `passed: true` after an outer timeout, failed cleanup or missing
+receipt. Keep private recovery material for reconciliation and publish only
+safe structured summaries.
+
+Inspect the worker-cancellation observation separately from the wrapper's final
+cleanup. Require workload activity, a matching live generation and exact
+sandbox presence before cancel. The cancelled attempt's sandbox must be absent in a
+bounded read-only query, without the assertion deleting it. Routine cancellation
+does not prove cleanup of an uncertain-intent orphan after parent death or undo
+external effects. The repetition flag repeats failover/partial-usage cycles;
+other lifecycle cases run once, and gateway outage probes occur after the child
+test. Record measured duration and faults instead of calling every repeat a
+production soak. See the [RFE #47 scope and current-candidate requirements](internal/constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased).
 
 ### Effective-policy fixture inspection (Unreleased)
 

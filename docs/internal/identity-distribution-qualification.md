@@ -147,6 +147,50 @@ under `outputs/runkite-next/hosted-pr66-qualification/`, outside the repository.
 This closes the bounded hosted-qualification gate. It is neither a registry
 publication nor an independent assessment or long-duration production soak.
 
+## Current-source RFE #47 evidence (Unreleased)
+
+The unchanged Linux baseline passed three bounded cycles in
+[run 44062021430](https://github.com/getrunkite/runkite/actions/runs/44062021430)
+on revision `5c84c1f9fdb004728038bec427677841a1a1162b`. Its managed evidence
+records 33.814 seconds. This establishes a baseline for the fixture hardening,
+not a hosted pass for the changed candidate.
+
+The frozen candidate then passed locally on macOS with the native OpenShell
+0.1.8 fixture. The shared validator recorded `passed: true`, native HA, all
+three requested cycles, nine managed cases, gateway TLS and confirmed runtime
+and backend cleanup. Managed execution took 55.693 seconds; the enclosing
+single unittest passed in 58.397 seconds. Four cancellation observations
+included workload activity, live-generation controls and exact-selector sandbox
+presence before cancellation and absence before teardown. Three additional
+live-generation observations checked current authority against mismatched
+generation usage and checkpoint requests.
+
+The allowlisted summary is retained at
+`outputs/runkite-next/isolated-ha-20261117/final-native/run.vsv1BF/evidence-summary.json`,
+outside the repository. Its artifact context records the actual binary, wheel
+and CLI hashes and a dirty checkout based on `5c84c1f`; this is not an attestation
+that caller-supplied artifacts match a source revision. Candidate hosted
+qualification remains pending. These bounded maintainer checks do not establish
+an independent assessment or a production multi-replica soak.
+
+### Reconciliation with assignment identity protocol 1
+
+The later local integration is based on runtime revision `26c61fc` and preserves
+the installed parent's successful-preflight proof capture, first-record pinning
+and exact original-record headers. The live-generation and cancellation probes
+also check that the committed launch intent belongs to that captured record.
+Generation-denial controls require `run_generation_mismatch`, so missing proof
+cannot satisfy the negative case. All five original-proof regression tests are
+retained alongside the sterile-environment, evidence and supervisor tests.
+
+The `5c84c1f` measurements above predate this combined harness and runtime. They
+are historical evidence, not a native pass for the reconciled candidate. Run the
+same three-cycle native fixture with newly built matching binary and wheel, then
+validate its newly created receipts through `scripts/isolated_ha_evidence.py`.
+Hosted candidate qualification, approved publication and independent assessment
+remain separate external gates. This local integration changes no released
+version or production runtime behavior.
+
 <a id="actual-partial-publication"></a>
 
 ## Verified v0.8.0 publication
@@ -213,6 +257,15 @@ matched. Go, container and PyPI upload jobs remained outside manual recovery.
 <a id="pending-npm-publication-and-external-assessment"></a>
 
 ## Remaining external qualification
+
+This document's v0.8.0 measurements remain historical. The combined external
+runtime path is implemented, including the hosted result recorded above. The
+Unreleased [RFE #47 fixture hardening](constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased)
+adds deliberate child environments, shared structured evidence validation and
+controlled worker-cancellation observations before the wrapper's cleanup. Its
+[current-source evidence](#current-source-rfe-47-evidence-unreleased) includes
+the local candidate pass; candidate hosted qualification remains pending. No
+new hosted pass or RFE closure follows from the historical record.
 
 Before a future automated npm publication, configure and validate each
 package's publishing authority when a genuine new version is ready. The
