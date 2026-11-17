@@ -1176,7 +1176,7 @@ def _connector_action_schemas() -> dict:
         "break_glass_id": {"type": "string", "description": "Reference to the authorizing break-glass window, when used."},
         "pending_action_id": {"type": "string", "description": "Reference to an existing approval record, not this connector action ID."},
         "policy_revision": {"type": "string", "description": "Optional authoritative revision reference. Omitted when unavailable; absence does not establish revision pinning."},
-        "target_revision": {"type": "string", "pattern": "^target-v1-[0-9a-f]{64}$", "minLength": 74, "maxLength": 74, "description": "Fingerprint of the configured MCP target snapshot used for this attempt. Secret values are excluded. Omitted on historical records; this does not attest remote implementation or tool schema."},
+        "target_revision": {"type": "string", "pattern": "^target-v[1234]-[0-9a-f]{64}$", "minLength": 74, "maxLength": 74, "description": "Fingerprint of the configured MCP target snapshot used for this attempt. Secret values are excluded. Omitted on historical records; this does not attest remote implementation or tool schema."},
         "tool_revision": {"type": "string", "description": "Optional tool revision reference. Omitted when unavailable."},
         "credential_ref": {"type": "string", "description": "Optional safe credential provenance reference. Never a credential value; omitted when unavailable."},
         "trace_id": {"type": "string"},
@@ -1349,7 +1349,7 @@ def _build_admin_spec() -> dict:
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"}, "type": {"type": "string"},
-                        "mcp": {"type": "string"}, "circuit_breaker_state": {"type": "string"},
+                        "mcp": {"type": "string"}, "mcp_tools_only": {"type": "boolean", "description": "Configured tools-only MCP method profile on this replica; false or absent preserves the existing transport behavior."}, "circuit_breaker_state": {"type": "string"},
                     },
                     "title": "ConnectorInfo",
                 },
@@ -1425,7 +1425,7 @@ def _build_admin_spec() -> dict:
                         "id": {"type": "string"},
                         "run_id": {"type": "string"},
                         "run_incarnation_id": {"type": "string", "description": "Opaque database identity of the original managed run. Absent on standalone decision operations and legacy unbound rows; managed approval authority requires an exact match to the current stored incarnation."},
-                        "target_revision": {"type": "string", "pattern": "^target-v1-[0-9a-f]{64}$", "minLength": 74, "maxLength": 74, "description": "Configured target fingerprint for a managed MCP approval. A missing, malformed or changed managed target requires fresh submission and review. Absent on standalone expiring decisions and historical unbound rows. Credential values are excluded; remote implementation changes require the operator's mcp.revision update."},
+                        "target_revision": {"type": "string", "pattern": "^target-v[1234]-[0-9a-f]{64}$", "minLength": 74, "maxLength": 74, "description": "Configured target fingerprint for a managed MCP approval. A missing, malformed or changed managed target requires fresh submission and review. Absent on standalone expiring decisions and historical unbound rows. Credential values are excluded; remote implementation changes require the operator's mcp.revision update."},
                         "generation": {"type": "integer", "format": "int64"},
                         "tenant_id": {"type": "string"},
                         "agent_id": {"type": "string"},
@@ -2047,7 +2047,7 @@ def _build_internal_spec() -> dict:
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"}, "type": {"type": "string"},
-                        "mcp": {"type": "string"}, "circuit_breaker_state": {"type": "string"},
+                        "mcp": {"type": "string"}, "mcp_tools_only": {"type": "boolean", "description": "Configured tools-only MCP method profile on this replica; false or absent preserves the existing transport behavior."}, "circuit_breaker_state": {"type": "string"},
                     },
                     "title": "ConnectorInfo",
                 },
@@ -2055,7 +2055,7 @@ def _build_internal_spec() -> dict:
                     "type": "object",
                     "properties": {
                         "name": {"type": "string"}, "type": {"type": "string"},
-                        "mcp": {"type": "string"}, "errors": {"type": "object"},
+                        "mcp": {"type": "string"}, "mcp_tools_only": {"type": "boolean", "description": "Configured tools-only MCP method profile on this replica."}, "errors": {"type": "object"},
                         "tools": {"type": "object"}, "circuit_breaker_state": {"type": "string"},
                     },
                     "title": "ConnectorDetail",
@@ -2127,7 +2127,7 @@ def _build_internal_spec() -> dict:
             "/internal/connectors": {"get": {"tags": ["Runner"], "summary": "List Connectors", "operationId": "list_connectors", "responses": {**_json_response("200", "Success", _array_of(_ref("ConnectorInfo")))}}},
             "/internal/connectors/{name}": {"get": {"tags": ["Runner"], "summary": "Get Connector", "operationId": "get_connector", "parameters": [n_param], "responses": {**_json_response("200", "Success", _ref("ConnectorDetail")), "404": _ERR_404}}},
             "/internal/connectors/{name}/session": {"post": {"tags": ["Runner"], "summary": "Get Connector Session", "operationId": "get_connector_session", "parameters": [n_param], "requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"user_context": {"type": "object"}}}}}}, "responses": {**_json_response("200", "Success", {"type": "object"}), "404": _ERR_404, "502": {"description": "Bad Gateway", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
-            "/internal/connectors/{name}/mcp": {"post": {"tags": ["Runner"], "summary": "Proxy MCP Request", "description": "Proxy one unambiguous JSON-RPC request through connector policy. Tool arguments must be an object when present. Managed tool calls pin a configured target snapshot before policy evaluation. Approval for another target is not consumed; changed targets need a new pending action and fresh review, including when action capture is off. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.", "operationId": "proxy_mcp_request", "parameters": [n_param], "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {**_json_response("200", "Success", {"type": "object"}), "404": _ERR_404, "409": {"description": "Pinned target binding changed before dispatch. Fresh review is required; no automatic retry.", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "502": {"description": "Bad Gateway", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
+            "/internal/connectors/{name}/mcp": {"post": {"tags": ["Runner"], "summary": "Proxy MCP Request", "description": "Proxy one unambiguous JSON-RPC request through connector policy. Unreleased mcp.tools_only limits inbound methods to initialize, notifications/initialized, ping, tools/list and tools/call. Other requests return a local JSON-RPC method-not-found error; denied notifications return HTTP 202 without forwarding. Denied proxy methods do no downstream credential work. Initialization advertises only the upstream tools capability without listChanged. Session issuance can independently acquire credentials. Tool arguments must be an object when present. Managed tool calls pin a configured target snapshot before policy evaluation. Approval for another target is not consumed; changed targets need a new pending action and fresh review, including when action capture is off. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.", "operationId": "proxy_mcp_request", "parameters": [n_param], "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {**_json_response("200", "Success", {"type": "object"}), "404": _ERR_404, "409": {"description": "Pinned target binding changed before dispatch. Fresh review is required; no automatic retry.", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}, "502": {"description": "Bad Gateway", "content": {"application/json": {"schema": _ref("ErrorResponse")}}}}}},
             "/internal/cron": {"get": {"tags": ["Runner"], "summary": "List Cron Schedules", "operationId": "list_cron_schedules", "responses": {**_json_response("200", "Success", _array_of(_ref("CronSchedule")))}}},
             "/internal/store/items": {
                 "put": {"tags": ["Store"], "summary": "Put Store Item (internal)", "operationId": "internal_put_item", "requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object"}}}}, "responses": {"204": {"description": "Success"}}},
@@ -2356,7 +2356,7 @@ def _add_security_completion(spec: dict) -> None:
     stamp = {"type": "string", "format": "date-time"}
     text = {"type": "string"}
     revision = lambda prefix: {"type": "string", "pattern": f"^{prefix}-[0-9a-f]{{64}}$", "minLength": len(prefix) + 65, "maxLength": len(prefix) + 65}
-    target = revision("target-v[123]")
+    target = revision("target-v[1234]")
     target.update(minLength=74, maxLength=74)
     policy = revision("policy-v1")
     tool = {"type": "string", "pattern": "^(?:|tool-v1-[0-9a-f]{64})$", "maxLength": 72, "description": "Optional actual MCP tool contract digest. Empty means no pinned schema, never a wildcard. Does not attest remote implementation."}

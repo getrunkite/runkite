@@ -4,6 +4,7 @@ import { useApi } from "../api/useApi";
 import type { AdminConnector } from "../api/types";
 import { DocsLink, EmptyState, ErrorState, PageHeader, StatusBadge, supportPage} from "../components/common";
 import { DataTable } from "../components/data-table";
+import { Badge } from "../components/ui/badge";
 
 const columns: ColumnDef<AdminConnector, unknown>[] = [
   { accessorKey: "name", header: "Name", cell: ({ getValue }) => <span className="font-medium">{getValue() as string}</span> },
@@ -15,8 +16,13 @@ const columns: ColumnDef<AdminConnector, unknown>[] = [
   {
     accessorKey: "mcp",
     header: "MCP endpoint",
-    cell: ({ getValue }) => (
-      <span className="max-w-xs truncate text-muted-foreground">{(getValue() as string) || "—"}</span>
+    cell: ({ row }) => (
+      <div className="flex flex-col items-start gap-1">
+        <span className="max-w-xs truncate text-muted-foreground">{row.original.mcp || "None"}</span>
+        {row.original.mcp && row.original.mcp_tools_only === true && (
+          <Badge variant="outline">Tools only</Badge>
+        )}
+      </div>
     ),
   },
   {
@@ -24,7 +30,7 @@ const columns: ColumnDef<AdminConnector, unknown>[] = [
     header: "Circuit breaker",
     cell: ({ getValue }) => {
       const state = getValue() as string | undefined;
-      return state ? <StatusBadge status={state} /> : "—";
+      return state ? <StatusBadge status={state} /> : "Unknown";
     },
   },
 ];
@@ -44,7 +50,7 @@ export function Connectors() {
         <EmptyState
           icon={Plug}
           title="No connectors"
-          message="Optional. Add a connectors block to langgraph.json when agents need pre-warmed OAuth or MCP sessions — see docs/connectors.md."
+          message="Optional. Add a connectors block to langgraph.json when agents need pre-warmed OAuth or MCP sessions. See docs/connectors.md."
         
           learnMore={{ href: supportPage("connectors.html"), label: "Docs: connectors →" }}
         />

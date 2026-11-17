@@ -30,6 +30,8 @@ test("permission controls preserve legacy review and expiry boundaries", () => {
   assert.equal(reviewPendingControls(identity, action).showActions, false);
   const approver = { ...identity, can_approve: true };
   assert.deepEqual(reviewPendingControls(approver, action), { showActions: true, expired: false, approveBlocked: null, denyBlocked: false });
+  assert.equal(reviewPendingControls(approver, { ...action, target_revision: `target-v4-${"a".repeat(64)}` }).approveBlocked, null);
+  assert.match(reviewPendingControls(approver, { ...action, target_revision: `target-v5-${"a".repeat(64)}` }).approveBlocked!, /connector target revision/);
   const legacy = reviewPendingControls(approver, { ...action, run_incarnation_id: undefined });
   assert.match(legacy.approveBlocked!, /fresh review/); assert.equal(legacy.denyBlocked, false);
   const unboundTarget = reviewPendingControls(approver, { ...action, target_revision: undefined });

@@ -138,6 +138,10 @@
           "mcp": {
             "type": "string"
           },
+          "mcp_tools_only": {
+            "type": "boolean",
+            "description": "Configured tools-only MCP method profile on this replica; false or absent preserves the existing transport behavior."
+          },
           "circuit_breaker_state": {
             "type": "string"
           }
@@ -155,6 +159,10 @@
           },
           "mcp": {
             "type": "string"
+          },
+          "mcp_tools_only": {
+            "type": "boolean",
+            "description": "Configured tools-only MCP method profile on this replica."
           },
           "errors": {
             "type": "object"
@@ -929,7 +937,7 @@
           "Runner"
         ],
         "summary": "Proxy MCP Request",
-        "description": "Proxy one unambiguous JSON-RPC request through connector policy. Tool arguments must be an object when present. Managed tool calls pin a configured target snapshot before policy evaluation. Approval for another target is not consumed; changed targets need a new pending action and fresh review, including when action capture is off. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.",
+        "description": "Proxy one unambiguous JSON-RPC request through connector policy. Unreleased mcp.tools_only limits inbound methods to initialize, notifications/initialized, ping, tools/list and tools/call. Other requests return a local JSON-RPC method-not-found error; denied notifications return HTTP 202 without forwarding. Denied proxy methods do no downstream credential work. Initialization advertises only the upstream tools capability without listChanged. Session issuance can independently acquire credentials. Tool arguments must be an object when present. Managed tool calls pin a configured target snapshot before policy evaluation. Approval for another target is not consumed; changed targets need a new pending action and fresh review, including when action capture is off. Only a pre-dispatch 401 connector_session_invalid permits capability renewal. Upstream 401 returns 502 connector_upstream_unauthorized and may follow execution; do not automatically replay.",
         "operationId": "proxy_mcp_request",
         "parameters": [
           {

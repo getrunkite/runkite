@@ -15,7 +15,7 @@ export interface PendingApprovalBinding {
 }
 
 export function validManagedTargetRevision(value?: string): boolean {
-  return typeof value === "string" && value.length === 74 && /^target-v[123]-[0-9a-f]{64}$/.test(value);
+  return typeof value === "string" && value.length === 74 && /^target-v[1234]-[0-9a-f]{64}$/.test(value);
 }
 
 export function approvalProgress(action: PendingApprovalBinding) {

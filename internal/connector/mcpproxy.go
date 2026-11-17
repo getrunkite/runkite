@@ -36,12 +36,11 @@ import (
 // correctly apply a deny-only filter, because it filters the downstream
 // server's own real tools/list response, not a static guess.
 //
-// Scope, stated plainly: this covers the two JSON-RPC methods where
-// enforcement actually matters (tools/call is gated, tools/list is
-// filtered); every other MCP method (initialize, resources/*, prompts/*,
-// notifications) is forwarded transparently. Simple POST-in/POST-out
-// JSON-RPC only -- an MCP transport that also needs a long-lived SSE
-// stream for server-initiated pushes is not covered by this pass.
+// tools/call is gated and tools/list is filtered. The optional tools_only
+// profile additionally restricts incoming methods and initialization
+// capabilities. Without it, other methods retain the existing transport
+// behavior. Runner-facing responses are request-scoped JSON, not a persistent
+// SSE channel for server-initiated pushes.
 
 // jsonRPCRequest / jsonRPCResponse are MCP's JSON-RPC 2.0 envelope --
 // only the fields this proxy needs to inspect or construct, not a full
@@ -107,6 +106,17 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 	if err != nil {
 		return nil, err
 	}
+	if cfg.MCP.ToolsOnly {
+		if !toolsOnlyMethodAllowed(req.Method) {
+			trace.notDispatched("connector_mcp_method_denied")
+			return deniedMCPMethodResult(req.ID)
+		}
+		if req.Method == "initialize" {
+			if err := clearInitializationClientCapabilities(req); err != nil {
+				return nil, err
+			}
+		}
+	}
 	body = req.Body
 
 	if req.Method == "tools/call" {
@@ -148,6 +158,15 @@ func (r *Registry) ProxyMCPRequest(ctx context.Context, name string, userCtx map
 			c.breaker.RecordFailure()
 		}
 		return nil, fmt.Errorf("connector %s: mcp request failed: %w", name, err)
+	}
+	// JSON mode supplies raw response bytes; streamable mode supplies the SDK's
+	// normalized result. This does not attest the original SDK negotiation wire.
+	if cfg.MCP.ToolsOnly && req.Method == "initialize" && statusCode >= 200 && statusCode < 300 {
+		respBody, err = toolsOnlyInitializationResponse(respBody, req.ID)
+		if err != nil {
+			c.breaker.RecordFailure()
+			return nil, err
+		}
 	}
 	c.breaker.RecordSuccess()
 	if trace != nil && req.Method == "tools/call" {

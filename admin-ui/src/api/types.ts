@@ -130,6 +130,7 @@ export interface AdminConnector {
   name: string;
   type: string;
   mcp?: string;
+  mcp_tools_only?: boolean;
   circuit_breaker_state?: string;
 }
 

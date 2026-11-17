@@ -25,6 +25,16 @@ change an existing binary, image, wheel or npm install.
   reset. No factory, TypeScript, generic-adapter or named-tenant introspection,
   reporter revision/time, deployment attestation or MCP session refresh is added.
   See [schema recovery](internal/schema-publication-recovery.md).
+- Optional `mcp.tools_only` narrows the connector proxy's inbound methods to
+  initialize, initialized notification, ping and tool list/call. Unsupported
+  requests are rejected locally; notifications get an empty 202. It is not an
+  outbound SDK protocol gate, content filter or sandbox. Tool results can carry
+  arbitrary resources/links and data. Earlier session creation can still acquire
+  credentials. New requests check the current profile even with an existing
+  session token, but already admitted calls are not retroactively revoked.
+  Enable it only after upgrading all HTTP replicas. It changes managed target
+  fingerprints to v4; default behavior/fingerprints stay unchanged. See the
+  [tools-only contract](internal/tools-only-connectors.md).
 - Registry metadata preservation is a loaded-value replacement roundtrip,
   without a merge or concurrent-edit guard. SQLite and Postgres retain exact
   opaque JSON numeric values within their existing limits. MySQL native JSON

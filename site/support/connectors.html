@@ -284,6 +284,18 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           <code>tools/call</code> arguments, when present, must be a JSON object;
           a string containing encoded JSON is not a substitute.
         </p>
+        <h2 id="tools-only">Tools-only MCP profile (Unreleased)</h2>
+        <p>If a connector's upstream server exposes resources, prompts or other methods that its caller does not need, opt in with <code>mcp.tools_only: true</code>. Omitted or false keeps the existing contract. The profile works with both JSON and negotiated Streamable HTTP; existing tool filters, grants, argument policy and HITL remain in force.</p>
+        <pre class="mono-block">mcp:
+  url: https://files-mcp.example/mcp
+  transport: streamable_http
+  tools_only: true
+tools:
+  allow: [get_file_contents, list_issues]</pre>
+        <p>Only inbound <code>initialize</code>, <code>notifications/initialized</code>, <code>ping</code>, <code>tools/list</code> and <code>tools/call</code> are admitted. Other requests, including inbound <code>server/discover</code>, get local JSON-RPC <code>-32601</code> with HTTP 200; notifications get HTTP 202 without a body. Rejection precedes that proxy operation's breaker, credential resolution and discovery/forwarding. A separate earlier session request may already have acquired credentials.</p>
+        <p>Initialize responses advertise only the upstream's <code>tools: {}</code> capability, without <code>listChanged</code>. JSON initialize messages use strict parsing; the negotiated transport uses the existing Go MCP SDK and filters its reconstructed result. This adds no raw-SSE parser or outbound SDK method gate. Tool results may still contain arbitrary text, embedded resources and links; they are not inspected or redacted.</p>
+        <p>Admin's <strong>Tools only</strong> badge and <code>mcp_tools_only</code> field show configured intent. Opt-in uses a <code>target-v4-</code> managed approval fingerprint; default fingerprints stay unchanged. Current profile checks apply to new proxy requests even with an existing session token, but tokens are not revision-bound and already admitted calls keep their snapshot. Upgrade every HTTP replica before enabling the flag because older binaries may ignore it. Follow the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#tools-only-connector-rollout-unreleased">rollout procedure</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/tools-only-connectors.md">engineering limits</a>.</p>
+
         <h2>What "run-bound" actually means (and why you'll see a 401 if you skip it)</h2>
         <p>
           A connector session is only ever minted for a run that's actually in progress

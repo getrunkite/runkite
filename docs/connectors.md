@@ -190,6 +190,47 @@ transport reconnect retries are disabled: an uncertain tool response must not
 cause a write tool to execute twice. Operators should use narrowly scoped
 service credentials and upstream resource permissions as well as Runkite grants.
 
+### Tools-only MCP profile (Unreleased)
+
+An operator who needs only tools from a multi-capability MCP server can opt in
+per connector with `mcp.tools_only: true` in YAML or JSON. Omitted or false keeps
+the existing contract. The option works with both `json` and `streamable_http`:
+
+```yaml
+mcp:
+  url: https://files-mcp.example/mcp
+  transport: streamable_http
+  tools_only: true
+tools:
+  allow: [get_file_contents, list_issues]
+```
+
+The runner-facing proxy then accepts only `initialize`,
+`notifications/initialized`, `ping`, `tools/list` and `tools/call`. Unsupported
+requests receive a local JSON-RPC `-32601`; unsupported notifications receive
+HTTP 202 without a body. Inbound `server/discover` is also rejected. The local
+gate precedes the proxy operation's breaker, credential resolution and upstream
+discovery/forwarding. A separate earlier `GetSession` may already have acquired
+credentials. Tool filters, grants, argument policy and HITL remain required.
+
+JSON initialize forwarding clears client capabilities and strictly filters
+server capabilities. The negotiated transport uses the existing Go MCP SDK,
+then filters its reconstructed initialize result. Both expose only an upstream
+`tools: {}` capability, without `listChanged`, and do not invent tools support.
+This adds no raw-SSE parser or outbound SDK method gate. Tool result bodies and
+embedded resource links are not inspected; the profile narrows methods, not
+arbitrary tool data or effects.
+
+Opting in produces a `target-v4-` managed approval fingerprint around the
+existing target descriptor. Default fingerprints remain unchanged. A changed
+profile requires a matching target and fresh managed review when applicable.
+Existing session tokens are not revision-bound; new proxy requests still check
+the configured profile. Admin's `mcp_tools_only` field and **Tools only** badge
+show that configuration. Upgrade every HTTP replica before enabling it because
+old binaries can ignore the new boolean. Follow the
+[rollout procedure](ops-runbook.md#tools-only-connector-rollout-unreleased) and
+[engineering contract](internal/tools-only-connectors.md).
+
 ### Connector body limits
 
 Raw MCP requests are limited to 1 MiB before parsing or forwarding. MCP responses
