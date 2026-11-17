@@ -151,10 +151,19 @@ The initial chart NetworkPolicy is ingress-only; the new optional egress profile
 needs explicit allowed destinations and an enforcing CNI. See the implementation,
 fixture controls and qualification limits in
 [the constrained execution record](internal/constrained-execution.md).
-The experimental JSONL profile has no model/token-usage or spend-settlement
-contract. Zero recorded spend does not establish free execution, and existing
-native SDK usage reporting is not inherited. Use external provider accounting
-and limits for unreported workload calls.
+Published v0.7.0 has no isolated model/token-usage settlement contract. v0.8.0
+adds [durable cumulative workload reports](internal/isolated-usage.md), including
+acknowledged partial usage and terminal settlement on SQL. Unknown usage stays
+distinct from an explicitly reported zero. These are workload assertions, not
+provider-verified bills or a hard ceiling against dishonest/unreported calls.
+Existing native SDK usage reporting is separate. Keep external provider
+accounting and limits.
+
+The Unreleased [effective-policy qualification](internal/openshell-effective-policy.md)
+observes matching current/loaded gateway configuration around fixture execution
+and compares it under the pinned OpenShell 0.1.8 checker's model. It changes no
+production gate and does not turn snapshot equality into atomic exec binding,
+continuous kernel enforcement or an independent security assessment.
 
 ## Required audit before access
 

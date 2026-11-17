@@ -179,6 +179,25 @@ The checked CLI reports `openshell 0.1.8`; its release archive was verified agai
 the official SHA-256 manifest. That checksum check alone does not establish
 gateway enforcement. Actual runtime qualification is recorded below.
 
+### Current-source effective-policy qualification (Unreleased)
+
+The optional `--prover` path in `scripts/qualify-isolated.py` now observes the
+gateway's complete effective policy and its exact loaded revision before
+workload exec and again before owned deletion. It compares the captured policy
+with the original authored boundary through the official OpenShell 0.1.8
+checker. This changes qualification tooling only; the production adapter,
+authorization and launch/checkpoint behavior are unchanged. Without the flag,
+the baseline explicitly records effective-policy checking as `not_requested`.
+
+The [effective-policy engineering note](openshell-effective-policy.md) records
+the pinned source, strict snapshot/identity rules, reproducible commands and
+passing local macOS result from November 17, 2026. Its checkpoint backend is an
+in-memory fixture, not the managed SQL/HA profile below. Inspect the separate
+Linux workflow's actual current result for that environment. Snapshot equality
+and configuration containment under the pinned checker's model do not atomically
+bind exec or prove continuous kernel enforcement. The external profile remains
+experimental; existing runtime probes and their exact limits still apply.
+
 ## Durable launch intent is not exactly-once execution
 
 The assignment's additive `run_incarnation_id` is derived from the durable run

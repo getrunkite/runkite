@@ -98,3 +98,24 @@ Use `scripts/qualify-isolated.py` only against a disposable, explicitly supplied
 loopback OpenShell gateway and the built fixture image. Read the qualification
 results and remaining release blockers in
 [the engineering note](../../docs/internal/constrained-execution.md).
+
+## Optional effective-policy qualification (Unreleased)
+
+The checkout qualifier accepts `--prover /absolute/path/to/openshell-prover`
+with the checksum-verified official OpenShell 0.1.8 CLI and checker. It creates a
+fresh owned sandbox, observes matching current/loaded policy before workload
+exec and after probes, and compares the captured configuration with the original
+boundary under the pinned checker's model. Unsupported inputs, composition or
+observed drift fail. Without the flag, the baseline reports effective-policy
+checking as `not_requested` even when its other controls pass.
+
+Use the [disposable TLS fixture commands](../../docs/internal/openshell-effective-policy.md#reproduce-on-a-disposable-local-engine)
+and inspect policy, TLS and cleanup summaries together. The recorded local
+macOS result used in-memory checkpoint/usage fixtures and a provider-free
+workload. It passed both created incarnations and four separate real checker
+controls. Inspect the separate Linux workflow's actual current result for that
+environment. No blocked URL was supplied, so no new runtime-network reachability
+claim follows.
+This adds no production worker gate, atomic exec fence, continuous enforcement,
+general provider-state attestation or independent certification. Keep this
+profile experimental and repeat runtime probes on the intended deployment.

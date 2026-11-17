@@ -464,6 +464,15 @@ Follow the [example](../examples/isolated_agent/README.md),
 [operator rollout](ops-runbook.md#security-completion-upgrade). Published v0.6.1
 runner packages do not contain this new profile.
 
+The Unreleased checkout adds an optional effective-policy comparison to the
+disposable qualifier, not to production runner execution. Pass an explicit
+OpenShell 0.1.8 prover path to capture matching current/loaded sandbox policy
+around fixture exec and compare it with the configured boundary. A baseline
+without the flag reports `not_requested`. This is observed configuration under
+the pinned checker's model, not atomic exec binding, continuous enforcement or
+universal SDK isolation. See the
+[qualification commands and measured scope](internal/openshell-effective-policy.md).
+
 <a id="certificate-bound-workload-ownership-unreleased-after-v070"></a>
 
 ## Certificate-bound workload ownership (v0.8.0)

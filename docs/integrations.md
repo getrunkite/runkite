@@ -91,6 +91,17 @@ or rollback. See [current-source limits](limitations.md#unreleased-current-sourc
 and the [integration checklist](internal/ecosystem-integration-checklist.md).
 These examples establish bounded interoperability, not upstream endorsement.
 
+Qualify an external execution boundary:
+
+- The Unreleased [OpenShell effective-policy fixture](internal/openshell-effective-policy.md)
+  adds an optional comparison to the existing disposable JSONL qualifier.
+  Matching current/loaded policy snapshots are checked against the configured
+  boundary by the official OpenShell 0.1.8 checker. The fresh provider-free
+  local macOS fixture passed; inspect the separate Linux workflow's actual
+  current result for that environment. This changes no production worker or
+  authorization and proves neither atomic exec binding, continuous kernel enforcement nor hidden
+  provider-state absence. The external profile remains experimental.
+
 ## Cline calls Runkite over MCP
 
 [Cline](https://github.com/cline/cline) supports Streamable HTTP with custom
