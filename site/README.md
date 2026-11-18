@@ -82,6 +82,27 @@ Then open http://127.0.0.1:8765/
 
 ## Presentation assets and behavior
 
+The product story leads with operating outcomes, then shows the architecture.
+`#operations` contains a three-view Admin tour: inspect a managed run, review a
+connector request and inspect a policy decision. These are recorded sample-data
+captures, not a live session or screenshots of the newer connector action
+evidence screen. Full-size links preserve access to the uncropped captures.
+`product-tour.js` progressively enhances the static sections into keyboard
+tabs. It validates the complete mapping before hiding any content. Without
+JavaScript or with invalid markup, the controls stay hidden and every section
+remains readable. The tour never advances automatically or changes playback
+preferences in the existing animations.
+
+Keep the outcome copy tied to its actual enforcement boundary. The incoming
+public `/mcp` agent interface is distinct from the outgoing connector proxy.
+The first-run source recipe pins matching plane and runner releases, creates a
+virtual environment and ends with a provider-free `/runs/wait` result. This is
+an intentional version-paired example; generic package-install guidance can
+remain unpinned. When advancing it, verify the complete recipe and result
+before changing both versions. See the
+[presentation design record](../docs/internal/product-presentation.md) for
+the source references and rationale.
+
 The homepage uses the real `ui-runs.png` Admin capture, explicitly labeled as
 demo data. `landing.js` starts the existing walkthrough GIF automatically unless
 the visitor requests reduced motion. Pause restores the still; Play restarts the

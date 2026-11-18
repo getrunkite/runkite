@@ -119,7 +119,10 @@ curl -sf http://localhost:2026/readyz && echo OK
           First build takes a few minutes. SQLite is enough for Pending.
         </p>
 
-        <h2>2. Refund that needs a human</h2>
+        <h2 id="first-run">2. Complete one managed run</h2>
+        <p>Open <code>http://localhost:2026/admin/</code>, choose <strong>Try agent</strong>, select <code>echo_agent</code> and send <code>hello</code>. Expect the assistant to return <code>hello</code> and a completed entry in <strong>Runs</strong>. The bundled echo graph uses no model provider or connector. This checks the plane-to-runner path before adding approval behavior.</p>
+
+        <h2 id="approval">3. Refund that needs a human</h2>
         <p>
           Fastest: Admin → Try agent → <code>pending_agent</code> → send
           <code>Refund $500 to the vendor</code>. Then Admin → Pending → approve.
@@ -141,11 +144,11 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
           must keep the original run and generation active and use the same arguments.
           This is separate from <code>command.resume</code>. For continuation on a later
           app request, see the <a href="sdk-integration.html#app-owned">app-owned decision path</a>.
-          Echo still works as a smoke test: agent_id <code>echo_agent</code>.
         </p>
 
-        <h2>What you should have seen</h2>
+        <h2 id="expected-results">What you should have seen</h2>
         <ul>
+          <li>A completed echo run with the message you sent.</li>
           <li>A held call that never reached the fake bank. Approval changes the row without performing the refund.</li>
           <li>Pending bound to the argument digest (a different amount is a new row).</li>
           <li>An audit row you can screenshot.</li>
@@ -154,7 +157,7 @@ curl -sf -X POST "$BASE/threads/$THREAD/runs/wait" \
         <ul class="expect">
           <li><a href="admin-guide.html">Admin UI guide</a>: walk through every screen in the dashboard you just opened.</li>
           <li><a href="first-agent.html">Your first agent</a>: write your own graph from scratch and run it through the plane.</li>
-          <li><a href="install.html">Install (Supported)</a>: when you're ready for the real Postgres + Redis profile.</li>
+          <li><a href="install.html#supported">Install (Supported)</a>: when you're ready for the Postgres + Redis profile.</li>
         </ul>
         <p class="note">
           Longer walkthrough:

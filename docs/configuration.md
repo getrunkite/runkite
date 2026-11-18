@@ -170,8 +170,10 @@ The scheduler polls every 15 seconds. A **restarting** schedule (one that has fi
 
 ### Required policy audit
 
-Availability: v0.7.0. Published v0.6.1 binaries do not
-implement this setting; rebuild from source before relying on it.
+Availability: released control planes since v0.7.0 include this setting,
+including v0.10.0. Use matching released artifacts and follow the
+[coordinated upgrade](ops-runbook.md#assignment-identity-upgrade) when moving to
+v0.10.0.
 
 Set `"audit_required": true` inside the existing `policy` block to require durable decision writes before admission or connector access proceeds. `audit` defaults to true; combining required audit with `"audit": false` is invalid. Startup requires a SQL audit store (Postgres, MySQL or SQLite). Mongo cannot enable this mode.
 
