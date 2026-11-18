@@ -1,12 +1,12 @@
 # Static policy expectations
 
-Unreleased, source checkout only. Published v0.9.0 does not include this command.
+The `runkite policy test` command is available in v0.10.0 binaries. The example
+fixture files remain source-checkout assets.
 
-From a source checkout:
+From a source checkout, using a matching v0.10.0 binary:
 
 ```sh
-go build -o /tmp/runkite-source ./cmd
-/tmp/runkite-source policy test -f examples/policy_fixtures/refunds.json
+runkite policy test -f examples/policy_fixtures/refunds.json
 ```
 
 The nine cases use synthetic tenant/agent/tool data. They exercise ordinary

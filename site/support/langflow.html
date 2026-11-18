@@ -73,7 +73,7 @@
       </aside>
       <main class="main" id="main-content" tabindex="-1">
         <div class="topbar"><a href="../">← Product</a><a href="https://github.com/getrunkite/runkite">GitHub</a></div>
-        <p class="kicker">Connect · Unreleased checkout recipe</p>
+        <p class="kicker">Connect · v0.10.0 checkout recipe</p>
         <h1>Langflow MCP caller</h1>
         <p class="lede">Keep the Langflow flow and let its MCP Tools component call one specialist on your self-hosted Runkite plane.</p>
         <p>Only the specialist creates a Runkite managed run. Langflow keeps its conversation, application and agent loop. No Langflow runtime or frontend is embedded in Runkite.</p>
@@ -81,8 +81,8 @@
         <h2>Prepare authority</h2>
         <p>Register a working Runkite agent and runner, initially the provider-free <code>echo_agent</code>. Use the exact HTTPS endpoint <code>https://&lt;your-plane&gt;/mcp</code> and configure MCP session affinity on a multi-replica deployment.</p>
         <ul class="expect">
-          <li><strong>Published v0.9.0:</strong> a dedicated tenant and trusted server-side caller key with <code>read</code> and <code>write</code>. The key has broader tenant authority than one specialist. Do not use Admin.</li>
-          <li><strong>Unreleased scoped source:</strong> <code>agents:echo_agent:run</code> alone admits the MCP lifecycle, discovery and invocation used by this recipe and its native probe. Add <code>agents:echo_agent:observe</code> only to application-owned REST recovery that needs exact run GET/wait. Neither grant supplies broad lists, thread history, store, stream, cancel or delete. Published v0.9.0 does not include this scoped contract.</li>
+          <li><strong>Broad caller (v0.9.0+):</strong> a dedicated tenant and trusted server-side caller key with <code>read</code> and <code>write</code>. The key has broader tenant authority than one specialist. Do not use Admin.</li>
+          <li><strong>v0.10.0 scoped caller:</strong> <code>agents:echo_agent:run</code> alone admits the MCP lifecycle, discovery and invocation used by this recipe and its native probe. Add <code>agents:echo_agent:observe</code> only to application-owned REST recovery that needs exact run GET/wait. Neither grant supplies broad lists, thread history, store, stream, cancel or delete. This scoped contract requires v0.10.0 or matching source; the recipe and native probe remain checkout assets.</li>
         </ul>
         <p>Keep one trusted caller and a dedicated tenant. Agent-scoped observation is not requester-private ownership. Choosing a tool in Langflow does not narrow a broad Runkite credential.</p>
 

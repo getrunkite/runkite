@@ -1,6 +1,6 @@
 # Advisory agent capability descriptors
 
-Status: Unreleased, current source only. Published v0.9.0 does not bootstrap
+Status: implemented in v0.10.0. Published v0.9.0 did not bootstrap
 this descriptor. It adds no migration, runner protocol message, permission or
 runtime feature.
 
@@ -45,7 +45,7 @@ The fields describe conditional adapter behavior:
   not report whether schema publication succeeded or whether a separately
   supplied schema is current.
 
-The Unreleased [publication-recovery task](schema-publication-recovery.md) does
+The v0.10.0 [publication-recovery task](schema-publication-recovery.md) does
 not add a descriptor value or a readiness signal. It fills only exact bootstrap
 rows from cached static Python reports; useful/partial reports can remain from
 another worker. The existing `schema_reporting` condition and unknown freshness

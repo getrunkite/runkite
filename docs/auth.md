@@ -1,8 +1,10 @@
 # Auth
 
-## Scoped specialist callers (Unreleased, source checkout only)
+<a id="scoped-specialist-callers-unreleased-source-checkout-only"></a>
 
-Published v0.9.0 does not include these additions. Current source accepts
+## Scoped specialist callers (v0.10.0)
+
+v0.10.0 accepts
 `agents:<id>:run` for the exact `/mcp` POST/GET/DELETE transport lifecycle and
 filters discovery to runnable agents. Invocation checks the agent again.
 Run-only credentials acquire no general read permission.
@@ -63,7 +65,7 @@ Four providers, configured via `auth` in `langgraph.json`:
 | `jwt` | Validate tokens against a JWKS endpoint, extract claims |
 | `webhook` | Forward headers to a sidecar service for custom auth logic |
 
-**Authorization**: `permissions` set on an API key, JWT claim, or webhook response are enforced -- `read` is required for GET/HEAD, `write` for other methods (`admin` bypasses both). `POST /governance/decide` and `GET /governance/actions/{id}` are the exception: they require `governance:decide`, which `read`, `write`, and `agents:<agent_id>:run` do not imply. Optional `agents:<agent_id>:run` is **not** blanket write: it satisfies route-level `write` on run-create routes (`POST /runs`, `POST /runs/stream`, `POST /runs/wait`, and the matching `POST /threads/{id}/runs[...]` variants). In Unreleased source, it also admits the exact MCP transport lifecycle described above. It does **not** authorize cancel/store/thread mutations or general REST reads. Inside `createRunCtx`, `CanRunAgent` still requires that exact agent (blanket `write`/`admin` allow any agent). Pair with `read` if the client needs to stream/wait after create, e.g. `["read", "agents:echo:run"]`. When `auth.type` is `api_key`, `jwt`, or `webhook`, **empty permissions fail closed by default** (`403`) -- every caller must carry an explicit allow-list. Set `"strict_permissions": false` only for local/dev if you intentionally want the old empty=unrestricted behavior. `"strict_permissions": true` is always fail-closed (same as the default for those provider types).
+**Authorization**: `permissions` set on an API key, JWT claim, or webhook response are enforced -- `read` is required for GET/HEAD, `write` for other methods (`admin` bypasses both). `POST /governance/decide` and `GET /governance/actions/{id}` are the exception: they require `governance:decide`, which `read`, `write`, and `agents:<agent_id>:run` do not imply. Optional `agents:<agent_id>:run` is **not** blanket write: it satisfies route-level `write` on run-create routes (`POST /runs`, `POST /runs/stream`, `POST /runs/wait`, and the matching `POST /threads/{id}/runs[...]` variants). In v0.10.0, it also admits the exact MCP transport lifecycle described above. It does **not** authorize cancel/store/thread mutations or general REST reads. Inside `createRunCtx`, `CanRunAgent` still requires that exact agent (blanket `write`/`admin` allow any agent). Pair with `read` if the client needs to stream/wait after create, e.g. `["read", "agents:echo:run"]`. When `auth.type` is `api_key`, `jwt`, or `webhook`, **empty permissions fail closed by default** (`403`) -- every caller must carry an explicit allow-list. Set `"strict_permissions": false` only for local/dev if you intentionally want the old empty=unrestricted behavior. `"strict_permissions": true` is always fail-closed (same as the default for those provider types).
 
 For the managed AI SDK chat bridge, keep the Runkite credential on the application server and give it the managed API permissions it needs. The full integration creates threads and runs, reads streams and durable completion, and cancels runs, so it uses a key with `read` and `write`. A `governance:decide` key alone cannot perform those operations. The app still authenticates users and checks ownership of its chat-to-thread mapping on every request. See the [integration guide](../site/support/sdk-integration.html).
 
@@ -110,12 +112,12 @@ Example (webhook sidecar):
 `cache_ttl_seconds > 0` caches a result per (credential, method, path) combination -- for a REST API whose paths embed resource IDs (`/threads/{id}/runs/{id}`), that's effectively one entry per distinct resource a caller has ever touched, not one per caller, so the cache is a size-bounded, TTL-evicting LRU rather than a plain map (`cache_max_entries`, default 10000) -- otherwise it would grow for the lifetime of a long-running control plane under completely normal traffic, not just under abuse.
 
 **Attempt identity:** generation must exactly equal the active assignment;
-zero is never a wildcard. Unreleased current source additionally requires
+zero is never a wildcard. v0.10.0 additionally requires
 `assignment_identity_version: 1` before dequeue and an exact
 `run_incarnation_id` echo. Bound HTTP uses `X-Runkite-Run-Incarnation` plus the
 existing run-ID and generation headers; lifecycle RPCs carry the same value.
 Missing or mismatched proof is rejected, without looking up a replacement's
-identity on the caller's behalf. Matching current-source Python and TypeScript
+identity on the caller's behalf. Matching v0.10.0 Python and TypeScript
 runners propagate it. This is an original-record continuity fence alongside
 runner-token and workload-owner authorization, not a bearer credential or
 attestation. See the [contract](internal/assignment-identity.md) and

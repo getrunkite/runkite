@@ -1,6 +1,7 @@
 # A specialist boundary between Trinity and Runkite
 
-Status: checkout-only example included with v0.9.0 source. It adds no
+Status: checkout-only example introduced with v0.9.0 source; the scoped caller
+update requires v0.10.0 plane capabilities. It adds no
 control-plane endpoint, new runner kind or registry package. Published v0.8.0
 does not include the incoming MCP stable-run-ID contract this example requires.
 
@@ -68,7 +69,7 @@ successful output. Durable error, interruption and timeout remain tool errors.
 
 ## Authority and qualification
 
-The Unreleased source update uses a dedicated tenant's named credential with
+The v0.10.0 update uses a dedicated tenant's named credential with
 `agents:<specialist>:run` plus explicit `agents:<specialist>:observe`. Published
 v0.9.0 used broader read/write authority and lacks this profile. Exact GET/wait
 recovery checks the stored agent and SQL incarnation reference. The bridge saves

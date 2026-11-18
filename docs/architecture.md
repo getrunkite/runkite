@@ -63,7 +63,7 @@ So: Agent Protocol = “what the product client speaks.” Runner Protocol = “
 **Control plane** (Go, single static binary):
 - Full Agent Protocol HTTP / SSE / WebSocket surface
 - State persistence (SQLite default; Postgres Supported; MySQL/Mongo Compatible)
-- Transport layer (in-memory default; Redis Supported; NATS Compatible; Kafka requires explicit non-atomic Compatible mode in current source)
+- Transport layer (in-memory default; Redis Supported; NATS Compatible; Kafka requires explicit non-atomic Compatible mode in v0.10.0)
 - Auth engine (JWT, API key, webhook, plus a separate runner-token tier for the gRPC bridge)
 - Connector/MCP registry with run-bound session + MCP proxy
 - Plane governance: fail-closed policy grants, durable audit, connector HITL, kill/pause, break-glass, mandatory HITL (SQL durability — see [Trust & governance](trust-governance.md))
@@ -98,7 +98,7 @@ Not every pluggable backend is equally battle-tested for multi-replica productio
 | **Mixed transport** | None | Kafka queue with explicit non-atomic opt-in; Redis supplies broker/cancel and reclaim-leader only | None |
 | **Vector store** | **pgvector** (on Supported Postgres) | Qdrant, Weaviate (filter pagination bound), Pinecone | — |
 
-Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, `REDIS_URL`, `NATS_URL`, and/or `KAFKA_URL`. Current-source Kafka additionally requires `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true`; Redis does not provide its queue with atomic CAS. Details and residual-risk notes for each driver live in the sections below (NATS Close gap, Kafka partitions/reclaim, Mongo replica-set requirement, Weaviate filter ceiling, checkpoint direct-mode Postgres-only, etc.).
+Switch backends by setting `POSTGRES_DSN`, `MYSQL_DSN`, `MONGO_URI`, `REDIS_URL`, `NATS_URL`, and/or `KAFKA_URL`. In v0.10.0, Kafka additionally requires `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true`; Redis does not provide its queue with atomic CAS. Details and residual-risk notes for each driver live in the sections below (NATS Close gap, Kafka partitions/reclaim, Mongo replica-set requirement, Weaviate filter ceiling, checkpoint direct-mode Postgres-only, etc.).
 
 **Why Postgres + Redis is Supported, not "everything equally":** Postgres is the only state backend with runner **direct-mode** checkpoints/store (`AsyncPostgresSaver` / JS equivalent); every other state backend forces **proxy mode** for that path. Redis is the only transport that pairs cleanly with multi-replica rate limits, shared in-flight reclaim, and the multi-compose topology without extra caveats. MySQL and SQLite share SQL governance tables with Postgres (audit / grants / pending / kill / break-glass / mandatory HITL); Mongo does not. NATS/Qdrant/Weaviate/Pinecone exist to prove the interfaces and serve real deployments that already standardize on them — they are not silently equal to the HA reference profile.
 
@@ -133,9 +133,11 @@ Known, honest gap versus Redis: `EventBroker.Close` is a documented no-op here, 
 
 <a id="kafka-transport-jobqueue-only--compatible-with-redis-experimental-without"></a>
 
-### Kafka transport: explicit non-atomic Compatible mode (Unreleased)
+<a id="kafka-transport-explicit-non-atomic-compatible-mode-unreleased"></a>
 
-Current source refuses Kafka queue construction unless
+### Kafka transport: explicit non-atomic Compatible mode (v0.10.0)
+
+v0.10.0 refuses Kafka queue construction unless
 `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true` explicitly accepts non-atomic
 Compatible mode. `KAFKA_URL` selects only the queue. Pairing `REDIS_URL` supplies
 the event broker, cancel bus and reclaim-leader lease; it does not provide
@@ -154,7 +156,7 @@ and local serialization do not become cross-replica CAS. A Redis reclaim-leader
 lease reduces competing reaper ticks but does not serialize all Kafka
 Ack/Renew/Nack/dequeue mutations. Earlier runner-crash recovery evidence with
 Kafka/Postgres/Redis remains a bounded observation, not an atomic-fencing proof.
-Current source therefore requires the explicit compatibility opt-in rather
+v0.10.0 therefore requires the explicit compatibility opt-in rather
 than claiming Redis closes those queue races.
 
 Passes all 15+ conformance tests, live-verified end-to-end, but real bugs surfaced along the way at every review pass, all confirmed against a real single-node KRaft broker, not assumed: (1) `ReclaimStale`/`Nack` were re-producing a job's original, unmodified bytes -- since Kafka (unlike Redis/NATS) has no native redelivery counter, a job's own embedded `generation` field is what `Dequeue` trusts, and re-producing without updating it meant every redelivery silently looked like generation 1 again, defeating fencing entirely; fixed by unmarshaling, bumping, and re-marshaling the payload before every re-produce. (2) The consumer-group id was scoped only by `runner_kind`, not also by this backend's own topic namespace -- two independent `Queue`s pointed at the same broker with different namespaces but the same literal `runner_kind` string collided on group membership, corrupting each other's offsets; fixed by folding the namespace into the group id too. (3) `kafka-go`'s default `Writer`/`Reader` both cap message size at 1MB independent of the broker's own `message.max.bytes`, silently rejecting or truncating this project's own large-payload conformance test until raised explicitly (`BatchBytes`/`MaxBytes`, 8MB, matching NATS's own `max_payload` fix). (4) A closer external review caught `Dequeue` committing a message's offset *before* writing its state-topic entry -- if the process died or that write failed in between, the job was neither Kafka-redeliverable (offset already committed) nor reclaimable (no state entry), silently lost for good; fixed by reordering so the state write happens first, so a failure in that window instead leaves the message uncommitted and redeliverable to a fresh consumer session, trading a small duplicate-delivery risk for eliminating the lost-job risk. (5) The same review caught `Len` deduplicating `ReadPartitions`' results by topic name and always reading partition 0, silently undercounting once `KAFKA_JOB_PARTITIONS` (see above) was raised above 1 -- fixed to sum lag across every partition.

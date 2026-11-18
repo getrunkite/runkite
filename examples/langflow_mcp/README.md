@@ -1,8 +1,8 @@
 # Langflow MCP Tools calling a Runkite specialist
 
-Unreleased checkout recipe. The incoming MCP transport and stable `run_id`
-contract exist in published Runkite v0.9.0. The scoped permissions described
-below require the newer source feature and are not in published v0.9.0.
+Checkout-only recipe included with v0.10.0 source. Incoming MCP and stable
+`run_id` already exist in v0.9.0; the scoped permissions below require v0.10.0
+plane capabilities. Langflow and its surrounding model loop remain external.
 
 Langflow keeps its flow, conversation, application authentication and agent loop.
 Its MCP Tools component calls `https://<your-plane>/mcp`. Only the selected
@@ -24,7 +24,7 @@ Choose one authority profile deliberately:
   with `read` and `write`. Write admits `/mcp`; read permits exact REST recovery.
   Do not use Admin. An agent run grant alone does not admit the published HTTP
   MCP route. This key has broader tenant authority than one specialist.
-- **Unreleased scoped source:** `agents:echo_agent:run` admits the MCP transport,
+- **v0.10.0 scoped profile:** `agents:echo_agent:run` admits the MCP transport,
   filtered discovery and that specialist's invocation. Add the separate
   `agents:echo_agent:observe` only if the application's recovery code needs exact
   run GET/wait. Observe alone does not invoke; run alone does not grant reads.
@@ -105,7 +105,7 @@ For durable background handles or bounded HTTP delivery, use the existing
 REST create/get/wait API from application code. This recipe does not turn a
 synchronous MCP call into a background job API.
 
-With the unreleased scoped observation feature, save the first
+With v0.10.0 scoped observation, save the first
 `Runkite-Run-Reference` from an exact REST GET/wait response, or
 `_meta["runkite/run_reference"]` from a completed raw MCP result, alongside the
 intent. Supply it as `Runkite-Expected-Run-Reference` on later GET/wait requests.

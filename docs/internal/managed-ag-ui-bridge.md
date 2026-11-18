@@ -1,7 +1,7 @@
 # Managed AG-UI text transport
 
-Status: Unreleased, source checkout only. Published v0.9.0 does not contain this
-adapter or the additive shared chunk-stream helpers. This note records an
+Status: checkout-only example included with v0.10.0 source, including the
+additive shared application chunk-stream helpers. This note records an
 application example, not a new runtime protocol or an AG-UI compliance claim.
 
 ## Caller need and boundary

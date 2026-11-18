@@ -120,7 +120,7 @@
           <img src="../assets/ui-cron.png" alt="Runkite Admin Cron schedules" width="960" height="600" />
         </figure>
 
-        <h2>Run visibility (Unreleased, current source)</h2>
+        <h2>Run visibility (v0.10.0)</h2>
         <p>
           Admin &rarr; Cron refreshes every 15 seconds and shows the latest retained run on each
           schedule's resolved thread. Open a linked run status for its result, or
@@ -153,11 +153,11 @@
           scheduler, per-fire receipts or retries. The separate optional calendar preview below is not retained execution history.
         </p>
 
-        <h2 id="tenant-thread-routing">Named-tenant continuity (Unreleased)</h2>
+        <h2 id="tenant-thread-routing">Named-tenant continuity (v0.10.0)</h2>
         <p>Default schedules keep <code>cron:&lt;name&gt;</code>. Named tenants first select their own versioned <code>cron-tenant:v1:&lt;digest&gt;</code> thread, reuse an existing legacy <code>cron:&lt;name&gt;</code> only when owned by that exact tenant, or create their canonical thread. This lets supported tenant-scoped schedules with equal names run independently without importing conversation history.</p>
         <p><strong>Upgrade:</strong> stop all cron writers before upgrading or rolling back. Mixed old/new schedulers can split a new named schedule's history. Existing owned legacy state stays on its original thread. If both owned threads exist, canonical takes precedence; inspect both because state is never merged automatically. Named LangGraph tenants still need proxy checkpoints. This adds no schema migration and does not repair older databases that retain a global schedule-name constraint. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-run-visibility.md#named-tenant-thread-routing-unreleased">routing contract</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#cron-tenant-thread-routing-unreleased">operator procedure</a>.</p>
 
-        <h2 id="next-fire-preview">Next calendar boundary (Unreleased)</h2>
+        <h2 id="next-fire-preview">Next calendar boundary (v0.10.0)</h2>
         <p>Admin Cron can show one projected future calendar boundary from the same pinned backend parser used by the scheduler. Read the UTC computation time and effective timezone with it. A boundary is strictly after that computation instant; it is not reserved work, a dispatch promise, a live countdown or evidence that a previous fire occurred.</p>
         <p><code>GET /admin-api/cron?include_preview=true</code> adds <code>next_fire_preview</code> without thread/run/claim history reads or history fields. Combine it with <code>include_history=true</code> when both views are needed. Definition-only and history-only callers keep their existing shape and read cost. All preview rows in one response share a single <code>computed_at</code> in UTC; a scheduled row also has UTC <code>next_fire_at</code>.</p>
         <ul class="expect">
@@ -169,7 +169,7 @@
         </ul>
         <p>An invalid configured timezone is flagged when it actually causes UTC fallback. An explicit expression-level <code>TZ=</code> or <code>CRON_TZ=</code> can instead select its own zone without that fallback flag. DST gaps, repeated times and date constraints follow the pinned backend parser. Refresh through the existing page flow for a newer snapshot. If no run appears at a projected boundary, investigate logs, claims, overlap, admission and workers; preview does not record those outcomes. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-next-fire-preview.md">engineering contract</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#cron-calendar-preview-unreleased">operator procedure</a>.</p>
 
-        <h2 id="acknowledgement-recovery">Uncertain delivery (Unreleased, current source)</h2>
+        <h2 id="acknowledgement-recovery">Uncertain delivery (v0.10.0)</h2>
         <p>A queue acknowledgement can fail after a scheduled run starts or finishes. The scheduler now retains that occurrence's fire claim when the original run was admitted, completed or remains uncertain. It retries only a definite precreation rejection or a successful atomic rollback proving the original run never started. Cleanup failures and ambiguous commits retain the claim for reconciliation. Inspect the exact original run ID recorded in the warning; the latest run on a shared schedule thread is not an identity proof. Ordinary HTTP errors remain unchanged. This adds no schema migration, fire ledger or exactly-once business-effect guarantee. Upgrade every cron-serving replica before relying on the correction. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-run-visibility.md#acknowledgement-loss-and-fire-claims-unreleased">retry contract and regression scope</a>.</p>
 
         <h2>What to expect</h2>
@@ -179,7 +179,7 @@
           <li><strong>Overlap</strong>: if the previous fire’s run is still in flight, the next fire is skipped like any busy thread.</li>
           <li><strong>Relative intervals</strong>: <code>@every</code> keeps its local not-due anchor so intervals longer than the poll tick can become due. It has no globally synchronized phase across replicas; preview intentionally supplies no anchor or next time.</li>
         </ul>
-        <p><strong>MySQL claim correction (Unreleased, current source):</strong> equal tenant/schedule/fire-time claims use an atomic insert. A duplicate-key result loses the claim with either value of the valid <code>clientFoundRows</code> driver option. Other database errors remain errors. Native before/after qualification on an owned MySQL 8.4 fixture reproduced twenty duplicate winners before the fix and exactly one winner in each concurrent driver profile afterward. This adds no schema migration, dispatch receipt or exactly-once business-effect guarantee. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-run-visibility.md#mysql-cron-claim-insertion-unreleased">claim contract and native regression scope</a>.</p>
+        <p><strong>MySQL claim correction (v0.10.0):</strong> equal tenant/schedule/fire-time claims use an atomic insert. A duplicate-key result loses the claim with either value of the valid <code>clientFoundRows</code> driver option. Other database errors remain errors. Native before/after qualification on an owned MySQL 8.4 fixture reproduced twenty duplicate winners before the fix and exactly one winner in each concurrent driver profile afterward. This adds no schema migration, dispatch receipt or exactly-once business-effect guarantee. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/cron-run-visibility.md#mysql-cron-claim-insertion-unreleased">claim contract and native regression scope</a>.</p>
         <p class="note">
           Reference: <a href="https://github.com/getrunkite/runkite/blob/main/docs/configuration.md">docs/configuration.md</a>
           · <a href="./admin-guide.html#7-cron">Admin UI guide → Cron</a>

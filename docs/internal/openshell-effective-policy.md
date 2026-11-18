@@ -1,6 +1,6 @@
 # Observe effective OpenShell policy around a qualification workload
 
-Status: Unreleased checkout qualification after v0.9.0. The external JSONL
+Status: checkout-only qualification included with v0.10.0 source. The external JSONL
 profile remains experimental. This work changes the disposable qualifier, not
 the production worker, authorization, checkpoint CAS, RPCs or Admin behavior.
 

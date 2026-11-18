@@ -100,7 +100,7 @@ GET    /agents/{id}/schemas                    Get agent input/output/state/conf
 GET    /agents/{id}/versions                   List version history (newest first)
 POST   /agents/{id}/versions/{v}/rollback      Roll back to an old version's content
 PUT    /internal/agents/{id}/schema            Runner reports its real, introspected schema (see below)
-POST   /internal/agents/{id}/schema/recover    Recover an existing all-bootstrap schema only (Unreleased)
+POST   /internal/agents/{id}/schema/recover    Recover an existing all-bootstrap schema only (v0.10.0)
 ```
 
 `GET .../schemas` starts with a `{"type":"object"}` bootstrap stub in each of
@@ -112,7 +112,7 @@ startup PUT. Factory graphs remain excluded because their shape can depend on
 per-run context. TypeScript and other Python profiles retain bootstrap defaults;
 LangGraph.js visual graph methods are not equivalent data-schema APIs.
 
-Unreleased source caches the static reports once and adds independent bounded
+v0.10.0 caches the static reports once and adds independent bounded
 background recovery rounds with a 60-second interval. Recovery POST atomically
 fills only an existing row whose four fields are all exact bootstrap stubs.
 Partial/useful reports are never replaced by recovery, no row is inserted, and
@@ -311,7 +311,9 @@ Plane policy and SQL Admin governance are documented in full elsewhere — this 
 | Trust boundary, run-binding, reason codes | [Trust & governance](trust-governance.md) |
 | Runner connector session + MCP proxy (`POST /internal/connectors/{name}/session`, `…/mcp`) | [Connectors](connectors.md) · OpenAPI [`spec/openapi-internal.json`](../spec/openapi-internal.json) |
 
-### Tools-only connector profile (Unreleased)
+<a id="tools-only-connector-profile-unreleased"></a>
+
+### Tools-only connector profile (v0.10.0)
 
 The existing run-bound MCP proxy honors optional `mcp.tools_only: true`.
 It admits only `initialize`, `notifications/initialized`, `ping`, `tools/list`
@@ -403,7 +405,7 @@ GET    /internal/cron              List configured cron schedules (name, agent_i
 GET    /admin-api/cron             Global Admin schedule definitions; optional history and preview projections
 ```
 
-Unreleased Admin clients can request `include_preview=true` to add
+v0.10.0 Admin clients can request `include_preview=true` to add
 `next_fire_preview`, independently of the existing `include_history=true`.
 With neither flag, the API keeps the definition-only response and cost;
 history-only adds no preview; preview-only adds no thread/run history fields or lookups. Both flags

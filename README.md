@@ -19,7 +19,9 @@ See [license scope](#license).
 
 **[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Demo guide](https://getrunkite.com/support/try.html)**
 
-**Unreleased, current source:** matching planes and runners now require [assignment identity protocol 1](docs/internal/assignment-identity.md), including exact original-record echoes and a coordinated drain/upgrade. Kafka requires an explicit non-atomic compatibility opt-in, even with Redis. Start with the [source integration and operator guide](docs/integrations.md#unreleased-current-source) for scoped specialist callers, advisory discovery, retained-run visibility and the Langflow, promptfoo and AG-UI examples. Each guide states its required checkout and tested boundary. Published v0.9.0 install and package instructions below describe the released baseline.
+**[v0.10.0](https://github.com/getrunkite/runkite/releases/tag/v0.10.0) requires a coordinated upgrade:** back up and drain all writers, apply Postgres/SQLite migration 23 or MySQL migration 24, and deploy matching protocol-1 planes and runners. Reconcile legacy accounting, hook claims and ambiguous receipts before restoring traffic. Follow the [upgrade sequence](docs/internal/release-candidate-v0100.md#upgrade-sequence). Kafka requires an explicit non-atomic compatibility opt-in, even with Redis.
+
+The [integration and operator guide](docs/integrations.md#unreleased-current-source) covers scoped specialist callers, advisory discovery, retained-run visibility and the Langflow, promptfoo and AG-UI examples. Runtime features ship in v0.10.0; application examples and qualification scripts remain checkout assets. See the [actual publication and qualification record](docs/internal/release-verification-v0100.md).
 
 <p align="center">
   <img src="docs/assets/runkite-overview.svg" alt="Two ways to use one Runkite plane: managed agents create Threads and Runs through runners; app-owned loops request individual tool decisions without creating managed runs." width="1120" />
@@ -171,7 +173,7 @@ walks through administrator configuration, application integration and review.
 
 ### Bring your framework
 
-The v0.9.0 runners retain these profiles from earlier releases. Check the runner
+The v0.10.0 runners retain these profiles from earlier releases. Check the runner
 registry links above for published versions, and deploy matching plane and runner
 artifacts. Each profile supports its documented subset of native features.
 

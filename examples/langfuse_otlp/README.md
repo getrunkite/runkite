@@ -8,8 +8,8 @@ does not dispatch a managed run or start a framework worker.
 
 Use the [deployment guide](../../docs/langfuse.md) for configuration and the
 [engineering note](../../docs/internal/langfuse-otlp.md) for source pins, measured
-results and limits. Existing exporters ship in v0.9.0; this qualifier is a new
-checkout asset.
+results and limits. Existing exporters ship in v0.9.0; this qualifier is a
+checkout asset included with v0.10.0 source.
 
 ## Prepare local prerequisites
 

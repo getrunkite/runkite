@@ -2,7 +2,7 @@
 
 Focused guides extracted from the root README. Start with the [root README](../README.md) for a short overview, then dive in here.
 
-For additions after published v0.9.0, start with the **[Unreleased current-source guide](integrations.md#unreleased-current-source)**. It links advisory discovery, specialist authority, operator visibility and the bounded caller/UI examples without changing package availability. Contributors should also use the [integration and qualification checklist](internal/ecosystem-integration-checklist.md).
+Start with the **[v0.10.0 integration guide](integrations.md#unreleased-current-source)** for advisory discovery, specialist authority, operator visibility and bounded caller/UI examples. Runtime features require matching v0.10.0 artifacts; application examples and qualification tools keep their checkout-only installation contracts. Contributors should also use the [integration and qualification checklist](internal/ecosystem-integration-checklist.md).
 
 | Doc | Topic |
 |-----|-------|

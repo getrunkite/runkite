@@ -2,7 +2,7 @@
 
 Replay YAML cases against a **live** control plane. This is CI for connector policy, not a simulation lab: the runner, model, and MCP servers are the real ones. The plane only marks the run so FinOps and daily admission skip; everything else still happens.
 
-For nonexecuting static policy expectations, Unreleased source has the separate
+For nonexecuting static policy expectations, v0.10.0 has the separate
 [`runkite policy test`](policy-fixtures.md) command. It does not create runs,
 resolve secrets, contact a PDP or execute tools.
 

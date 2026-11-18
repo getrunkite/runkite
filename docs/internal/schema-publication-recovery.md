@@ -1,8 +1,8 @@
 # Recover static graph schemas after control-plane registration
 
-Status: Unreleased, current source after v0.9.0. This is a Python static
+Status: implemented in v0.10.0. This is a Python static
 LangGraph publication fix. It adds no new framework introspection, schema
-provenance field, storage migration or release version.
+provenance field or storage migration.
 
 ## The existing report and the recovery gap
 

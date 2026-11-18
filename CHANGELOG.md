@@ -4,10 +4,18 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
-**Prepared candidate: 0.10.0, unpublished.** Published v0.9.0 artifacts keep
-their existing contract. The [candidate checklist](docs/internal/release-candidate-v0100.md)
-separates completed source qualification from pending hosted, artifact and
-publication checks.
+- Release-controller follow-up: npm public-artifact verification waits up to
+  300 seconds for registry visibility after upload, matching the existing PyPI
+  bound. Authentication errors and content mismatches still fail immediately;
+  no artifact is uploaded again merely because metadata is temporarily absent.
+  This controller change does not modify the immutable v0.10.0 runtime tag.
+
+## [0.10.0](https://github.com/getrunkite/runkite/releases/tag/v0.10.0) - 2026-11-18
+
+The [publication record](docs/internal/release-verification-v0100.md) identifies
+the immutable source, verified public artifacts, actual publishing authority
+and qualification limits. Integration applications and qualification scripts
+remain checkout assets, separate from the registry packages.
 
 ### Coordinated upgrade required
 

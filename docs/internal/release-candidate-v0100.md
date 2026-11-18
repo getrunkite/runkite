@@ -1,14 +1,16 @@
 # v0.10.0 release candidate
 
-Status: merged runtime qualified at `7a7ae07`, release unpublished. The selected
-version is 0.10.0 because the Runner Protocol and SQL accounting changes require
-a coordinated upgrade.
-Version metadata is not publication evidence. Published v0.9.0 remains the
-verified baseline in [the release procedure](../releasing.md).
+Status: historical qualification record for v0.10.0. The merged runtime was
+qualified at `7a7ae07`; the final tag identifies `33cf561`. The
+[publication record](release-verification-v0100.md) separately records actual
+registry uploads, tagged downloads, image verification and their limits.
+This page preserves earlier candidate measurements and their original source
+identities. The Runner Protocol and SQL accounting changes require a coordinated
+upgrade; a version stamp alone is not publication evidence.
 
 ## Upgrade sequence
 
-This sequence applies to the complete candidate, including earlier Unreleased
+This sequence applies to the complete release, including the earlier candidate's
 policy, connector and cron changes. Retain the prerequisites for the version
 being upgraded in [the operations runbook](../ops-runbook.md).
 
@@ -478,7 +480,7 @@ only. The results above remain attached to `7a7ae07`. Build final artifacts from
 the selected tag, including its README bytes and actual source stamp; do not
 publish or relabel these local snapshot artifacts as that later tagged build.
 
-## Remaining candidate and publication gates
+## Candidate and publication gates
 
 - [x] Merge the reviewed runtime source and pass its hosted checks at `7a7ae07`,
   including the separate three-cycle combined-HA qualification and integration
@@ -491,27 +493,33 @@ publish or relabel these local snapshot artifacts as that later tagged build.
 - [x] Rebuild and validate the four Go archives and all four registry package
   projects from the merged source; review each intended publisher configuration
   under the personal maintainer account. Retain the actual authentication limits.
-- [ ] Finish final-source preparation and pass its required CI before tagging.
+- [x] Finish final-source preparation and pass its required CI before tagging.
   Verify the documented difference from the qualified runtime source. Keep the
   rendered coordinated-upgrade notice with the release body, and build final
-  package READMEs from that source. Published availability remains v0.9.0.
-- [ ] Establish actual package upload outcomes in the intended release context.
+  package READMEs from that source. [PR #94](https://github.com/getrunkite/runkite/pull/94)
+  passed, its tested tree exactly matches the tagged merge `33cf561`, and that
+  merge passed [main CI](https://github.com/getrunkite/runkite/actions/runs/44298168726).
+  Availability promotion remained gated on actual artifact verification.
+- [x] Establish actual package upload outcomes in the intended release context.
   A successful preflight, configured publisher, continued failed step or
   matching-existing recovery is not fresh OIDC publication proof. Do not expose
   credentials in evidence or silently rely on an unverified fallback token.
-- [ ] After authorized tagging/publication, inspect the real Release jobs and
+- [x] After authorized tagging/publication, inspect the real Release jobs and
   verify four Go archives/checksums, three OpenAPI assets, both npm packages,
   both PyPI wheel/sdist pairs and both runtime platforms of all three image
   repositories. Verify actual downloads, image identity/runtime checks, legal
   content and existing vulnerability gates. Record the true authentication path;
   neither an upload acknowledgement nor a matching existing package proves a
   fresh OIDC publication.
-- [ ] Record the immutable tag/source and artifact evidence in a publication
+- [x] Record the immutable tag/source and artifact evidence in a publication
   verification note. Only then move the shipped changelog items into the
   published release and promote README/site/support availability together.
   Retain checkout-only labels for examples absent from registry artifacts and
   keep historical v0.9.0 records unchanged. Check Pages and protocol mirroring
-  separately; neither workflow publishes runner packages.
+  separately; neither workflow publishes runner packages. The
+  [publication record](release-verification-v0100.md) records the completed
+  artifact checks and actual authentication/recovery outcomes.
 
-Qualification did not create a v0.10.0 tag, publish a release or upload registry
-artifacts. Those actions remain separate release gates.
+The qualification actions above did not create a tag or upload release
+artifacts. Subsequent publication uses the immutable final source and its own
+evidence in the [publication record](release-verification-v0100.md).

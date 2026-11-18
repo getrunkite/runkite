@@ -1,6 +1,6 @@
 # Original-record identity through the runner boundary
 
-Status: Unreleased. This extends the checkpoint snapshot fence described in
+Status: implemented in v0.10.0. This extends the checkpoint snapshot fence described in
 [atomic results and identities](atomic-results-and-identities.md). The earlier
 fence protected a request already in progress. This change also rejects a fresh
 message sent by a worker that still holds a deleted record's assignment.

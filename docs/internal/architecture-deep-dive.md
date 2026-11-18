@@ -2495,7 +2495,7 @@ If Redis dies and comes back empty, you lose: in-progress event streams (clients
 The concern with dual writes is: "what if I write Postgres but Redis fails, or vice versa?" Here is how each case is handled:
 
 **CreateRun succeeds in Postgres, then Enqueue to Redis fails:**
-The handler calls `rollbackCreatedRun`. In current Unreleased source, its existing completion transaction marks only the original pending, never-started run as errored and releases the thread. A worker that already started retains its claim; a prior terminal winner is preserved. The user still sees the delivery error and must reconcile unknown acceptance.
+The handler calls `rollbackCreatedRun`. In v0.10.0, its existing completion transaction marks only the original pending, never-started run as errored and releases the thread. A worker that already started retains its claim; a prior terminal winner is preserved. The user still sees the delivery error and must reconcile unknown acceptance.
 
 **Enqueue succeeds, but runner never completes (crash):**
 Heartbeats stop, reclaim fires, job is requeued with a new generation. Eventually a runner succeeds and updates Postgres. The run goes from pending to success via the normal path — just slower.

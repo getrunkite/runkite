@@ -138,7 +138,7 @@
         </ul>
         <h2>Delivery errors and retained runs</h2>
         <p>
-          <strong>Unreleased source correction:</strong> queue acceptance can precede an
+          <strong>v0.10.0 correction:</strong> queue acceptance can precede an
           acknowledgement error. Cleanup now fails only the original pending run before
           any worker attempt begins. It preserves a committed result and keeps an
           admitted worker's thread busy. The caller still receives the delivery error;

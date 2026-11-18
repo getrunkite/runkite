@@ -32,7 +32,7 @@ Admin edits preserve the entry's loaded `metadata` object, including keys the
 form does not display. Use the API to edit metadata. Saves still replace the
 entry with the submitted values; this does not add concurrent-edit protection.
 
-Unreleased source carries loaded Admin metadata through a separate
+v0.10.0 carries loaded Admin metadata through a separate
 `metadata_json` string so the browser does not round its numbers before a save.
 Upgrade every HTTP replica and reload Admin before editing. A loaded entry from
 an older replica without that field fails closed. SQLite and Postgres preserve
@@ -47,13 +47,15 @@ precision limits remain. Previously rounded values cannot be recovered. See the
 
 `PublishRegistryEntry` and `DeleteRegistryEntry` run inside a real Mongo transaction on the MongoDB backend (same as agent versioning's `UpsertAgent` -- see State Backends below), not the non-atomic entry-table-update-then-version-insert this section used to describe as a limitation. Requires Mongo to run as a replica set (`docker-compose.test.yml`/CI now do); a standalone `mongod` rejects the transaction outright rather than silently degrading.
 
-## Optional definition requirements (Unreleased convention)
+<a id="optional-definition-requirements-unreleased-convention"></a>
+
+## Optional definition requirements (v0.10.0 convention)
 
 A catalog publisher can describe requirements in the existing opaque
 `metadata.runkite_definition` object. This is a versioned documentation
 convention, not a deployment manifest or a validated compatibility contract.
 Published v0.9.0 already stores opaque metadata; the read-only Admin metadata
-view and the preservation fix belong to Unreleased source.
+view and the preservation fix are available in v0.10.0.
 
 ```json
 {
@@ -61,8 +63,8 @@ view and the preservation fix belong to Unreleased source.
     "runkite_definition": {
       "schema_version": 1,
       "framework_kind": "python-langgraph",
-      "runkite_version": ">=0.9.0",
-      "packages": {"python": ["runkite-runner==0.9.0"], "node": []},
+      "runkite_version": ">=0.10.0",
+      "packages": {"python": ["runkite-runner==0.10.0"], "node": []},
       "connectors": ["ticketing"],
       "sample_input": {"messages": [{"role": "user", "content": "Summarize ticket DEMO-1"}]}
     }

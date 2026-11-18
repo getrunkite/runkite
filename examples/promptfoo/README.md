@@ -1,6 +1,6 @@
 # promptfoo managed-run provider
 
-Unreleased example in current source. This is an application-side custom API provider, not a new Runkite runtime or permission boundary. It creates ordinary governed runs through public REST endpoints and observes their durable results. No Admin credential, simulation header, embedding provider, remote grader or direct model SDK is used by the provider.
+Checkout-only example included with v0.10.0 source. This is an application-side custom API provider, not a new Runkite runtime or permission boundary. It creates ordinary governed runs through public REST endpoints and observes their durable results. No Admin credential, simulation header, embedding provider, remote grader or direct model SDK is used by the provider.
 
 The example pins promptfoo **0.125.1** and Node **22.22 or newer**. Compatibility is limited to the tested custom class loader, evaluator scheduler and CLI path. Requalify before changing the pin. The package pins narrowly scoped transitive resolutions, including upstream's Nunjucks watcher selection; see the [engineering note](../../docs/internal/promptfoo-managed-provider.md#evaluation-dependency-audit) for source evidence and compatibility limits.
 

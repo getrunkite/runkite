@@ -4,7 +4,7 @@ Availability: v0.8.0, not a change to published v0.7.0 artifacts. The external
 JSONL profile remains experimental. This contract
 records claims from a configured workload; it does not verify a provider bill.
 
-Unreleased current source additionally fences terminal accounting and hold
+v0.10.0 additionally fences terminal accounting and hold
 mutations against the original stored record. Apply Postgres/SQLite migration 23
 or MySQL migration 24 after backing up and draining all writers, and deploy
 matching planes and runners. Existing unbound ledger rows are retained; a

@@ -6,7 +6,9 @@ completion and argument authority, while this pass follows the same invariants
 through cache hits, thread replacement and runner identity transport. A source
 change or unchanged package version does not establish published availability.
 
-## Original-record finalization (Unreleased)
+<a id="original-record-finalization-unreleased"></a>
+
+## Original-record finalization (v0.10.0)
 
 This current-source follow-up extends
 [assignment identity protocol 1](assignment-identity.md). It is separate from the
@@ -120,7 +122,9 @@ and [shared store coverage](../../internal/state/conformance/cached_run.go) cove
 merged state, exact numbers, injected output/checkpoint/thread write failures,
 usage, TTL, concurrent retry, quota and cross-replica finalization.
 
-## Enqueue acknowledgement is not execution proof (Unreleased)
+<a id="enqueue-acknowledgement-is-not-execution-proof-unreleased"></a>
+
+## Enqueue acknowledgement is not execution proof (v0.10.0)
 
 `rollbackCreatedRun` already recovered the pending row and busy thread after a
 definite subscription or queue rejection. It also ran after a publication

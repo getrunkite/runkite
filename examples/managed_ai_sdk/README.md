@@ -20,9 +20,9 @@ profiles, detach, reattach and explicit Stop helpers to the app-side example.
 They are separate from the managed runner
 that shipped in v0.5.8, and do not change the plane's run API or SDK model loop.
 
-The Unreleased source checkout also exposes the validated chunk stream used by
+The v0.10.0 checkout example also exposes the validated chunk stream used by
 this bridge so the [AG-UI text example](../managed_ag_ui/README.md) can reuse the
-same run lifecycle and attempt checks. Published v0.9.0 does not include that
+same run lifecycle and attempt checks. The v0.9.0 example did not include that
 adapter or these additive helpers.
 
 ## Run the agent

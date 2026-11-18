@@ -190,7 +190,9 @@ transport reconnect retries are disabled: an uncertain tool response must not
 cause a write tool to execute twice. Operators should use narrowly scoped
 service credentials and upstream resource permissions as well as Runkite grants.
 
-### Tools-only MCP profile (Unreleased)
+<a id="tools-only-mcp-profile-unreleased"></a>
+
+### Tools-only MCP profile (v0.10.0)
 
 An operator who needs only tools from a multi-capability MCP server can opt in
 per connector with `mcp.tools_only: true` in YAML or JSON. Omitted or false keeps

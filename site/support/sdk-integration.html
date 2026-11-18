@@ -91,8 +91,12 @@
           your caller needs. The frontend can remain in Next, Nuxt or another app.
         </p>
         <p class="note">
-          <strong>Release overview:</strong> <a href="https://github.com/getrunkite/runkite/releases/tag/v0.9.0">v0.9.0</a>
-          adds stable MCP operation IDs and clearer Admin approval and output workflows.
+          <strong>Release overview:</strong> <a href="https://github.com/getrunkite/runkite/releases/tag/v0.10.0">v0.10.0</a>
+          requires matching protocol-1 planes and runners plus a
+          <a href="ops.html#assignment-identity-upgrade">coordinated SQL upgrade</a>.
+          It adds scoped specialist observation, advisory discovery and operator
+          visibility. Stable MCP operation IDs and the Admin approval/output
+          improvements introduced in v0.9.0 remain available.
           The opt-in security controls introduced in v0.8.0 remain available.
           v0.6.1 was the first Apache-2.0 release; published v0.6.0 artifacts retain BUSL-1.1.
           The decision API shipped in v0.5.3. The managed AI SDK runner ships in
@@ -104,7 +108,7 @@
           before selecting a package version.
         </p>
         <p class="note">
-          <strong>Python profiles:</strong> the v0.9.0
+          <strong>Python profiles:</strong> the v0.10.0
           <code>runkite-runner</code> wheel retains managed Microsoft Agent Framework,
           OpenAI Agents SDK, Pydantic AI and Google ADK adapters, installed through
           optional extras with dedicated commands. The stock Python image keeps its
@@ -403,10 +407,10 @@ node typescript/runkite-runner/dist/cli.js --framework ai-sdk \
           see the <a href="https://github.com/getrunkite/runkite/blob/main/examples/managed_ai_sdk/README.md#reattach-to-an-existing-run">example's reconnect and Stop contract</a>.
         </p>
 
-        <h2 id="managed-ag-ui">AG-UI text transport (Unreleased)</h2>
+        <h2 id="managed-ag-ui">AG-UI text transport (v0.10.0)</h2>
         <p class="note">
-          <strong>Source checkout only:</strong> published v0.9.0 does not include
-          this application example or its additive shared-stream helpers. The
+          <strong>v0.10.0 checkout example:</strong> this application and its shared-stream
+          helpers remain checkout files, separate from the published runner packages. The
           <a href="https://github.com/getrunkite/runkite/tree/main/examples/managed_ag_ui">managed AG-UI example</a>
           pins official <code>@ag-ui/core</code>, <code>@ag-ui/encoder</code> and
           <code>@ag-ui/client</code> at <code>1.0.4</code>, protocol <code>1.0</code>.

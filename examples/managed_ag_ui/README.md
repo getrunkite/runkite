@@ -1,7 +1,8 @@
 # Managed AG-UI text bridge
 
-**Unreleased, source checkout only. Published Runkite v0.9.0 does not include
-this example or the shared chunk-stream helpers it uses.**
+**Checkout-only example included with v0.10.0 source.** The shared application
+chunk-stream helpers are checkout assets too; use matching v0.10.0 plane and
+runner packages for the managed execution beneath this route.
 
 This application-side example connects the official AG-UI HTTP client to an
 ordinary Runkite managed run. It uses `@ag-ui/core`, `@ag-ui/encoder` and

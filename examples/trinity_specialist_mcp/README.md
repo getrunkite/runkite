@@ -1,9 +1,9 @@
 # A Trinity agent calling a Runkite specialist
 
-Unreleased, source-checkout-only scoped caller update. Published v0.9.0 does
-not provide the scoped grants and observation references this updated bridge
-uses. The original v0.9.0 example used broader dedicated-tenant authority. This directory is
-checkout source, not a separately published package or a Trinity upstream
+Checkout-only scoped caller update included with v0.10.0 source. Published
+v0.9.0 does not provide the scoped grants and observation references this updated bridge
+uses. The original v0.9.0 example used broader dedicated-tenant authority.
+This directory is checkout source, not a separately published package or a Trinity upstream
 integration.
 
 A Trinity agent may need a specialist that already runs in Runkite. Keep the

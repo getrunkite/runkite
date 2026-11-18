@@ -1,13 +1,13 @@
 # Offline policy fixtures
 
-Unreleased, source checkout only. Published v0.9.0 does not include this command.
+The `runkite policy test` command is available in v0.10.0 binaries. The example
+fixture files remain source-checkout assets.
 
 An administrator can check a proposed static connector policy against declared
 expectations without creating runs or executing tools:
 
 ```sh
-go build -o /tmp/runkite-source ./cmd
-/tmp/runkite-source policy test -f examples/policy_fixtures/refunds.json
+runkite policy test -f examples/policy_fixtures/refunds.json
 ```
 
 The command writes a JSON report to stdout. Exit status is `0` when all cases

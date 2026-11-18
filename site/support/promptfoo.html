@@ -5,7 +5,7 @@
     <meta name="theme-color" content="#0a0a0b" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>promptfoo evaluation · Runkite Docs</title>
-    <meta name="description" content="Evaluate managed Runkite runs with the qualified promptfoo 0.125.1 custom provider. Unreleased checkout example." />
+    <meta name="description" content="Evaluate managed Runkite runs with the qualified promptfoo 0.125.1 custom provider. v0.10.0 checkout example." />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -78,9 +78,9 @@
           <a href="https://github.com/getrunkite/runkite">GitHub</a>
         </div>
 
-        <p class="kicker">Connect · Unreleased checkout example</p>
+        <p class="kicker">Connect · v0.10.0 checkout example</p>
         <h1>Evaluate managed runs with promptfoo</h1>
-        <p class="lede">A custom API provider for promptfoo 0.125.1 creates ordinary Runkite managed runs and observes their durable results. The example lives in current source and is not part of the published 0.9.0 packages.</p>
+        <p class="lede">A custom API provider for promptfoo 0.125.1 creates ordinary Runkite managed runs and observes their durable results. The example is available in the v0.10.0 source checkout and is not installed by the registry packages.</p>
         <p class="note"><strong>Qualified scope:</strong> the pinned custom class loader, ordinary evaluator scheduler and CLI, using Node 26.11.0. The local qualification ran four evaluations as four distinct managed runs with a scripted worker and local equality assertions. It made no model calls. Real agent evaluations use the agent's configured model and tool budget.</p>
 
         <h2 id="setup">Use the checkout example</h2>
@@ -95,7 +95,7 @@ export PROMPTFOO_DISABLE_UPDATE=1
 npm exec -- promptfoo eval --config promptfooconfig.yaml --no-cache</pre>
         <p>The sample asks for the word <code>ready</code>. Replace that assertion with an appropriate evaluation for your agent. Use Node 22.22 or newer and the committed lockfile, which pins promptfoo 0.125.1 with audited dependency overrides. Requalify the loader and scheduler before upgrading it. The provider requires HTTPS and rejects redirects; explicit literal-loopback HTTP is available only for local fixtures.</p>
         <p>Use a dedicated tenant credential with the permissions required for run creation and observation. The compatibility example uses <code>read</code> and <code>write</code>, which are broader than a single specialist. See the <a href="credentials.html">credentials map</a>. Keep credentials in the environment and keep promptfoo evaluation artifacts private. The provider needs no Admin credential or simulation header.</p>
-        <p>A separate source-only native qualification profile uses exact agent run and observe grants. Both native profiles passed on the integrated source on 2026-11-16 with promptfoo 0.125.1 and Node 26.11.0: each created four distinct runs and threads and completed four reference-pinned waits. The scoped profile also passed six denial probes. It grants no lists, thread-history endpoints, stream, cancellation, deletion or Admin access. Observation is agent-wide rather than requester-private. Follow the example's <code>qualify:scoped</code> instructions on the matching checkout; published v0.9.0 does not include these permissions.</p>
+        <p>A separate checkout-only native qualification profile uses exact agent run and observe grants. Both native profiles passed on the integrated source on 2026-11-16 with promptfoo 0.125.1 and Node 26.11.0: each created four distinct runs and threads and completed four reference-pinned waits. The scoped profile also passed six denial probes. It grants no lists, thread-history endpoints, stream, cancellation, deletion or Admin access. Observation is agent-wide rather than requester-private. Follow the example's <code>qualify:scoped</code> instructions on the matching checkout; these permissions require v0.10.0 or matching source.</p>
 
         <h2 id="delivery">One create attempt, explicit recovery</h2>
         <p>Every intentional evaluator call gets fresh run and thread IDs. Before dispatch the provider fsyncs a private receipt with destination, agent, IDs and an input hash. It sends at most one <code>POST /threads/{threadID}/runs</code>, then uses <code>GET /runs/{runID}</code> and <code>GET /runs/{runID}/wait</code>. A lost create response followed by a missing row stays unknown. It never silently creates a replacement run.</p>

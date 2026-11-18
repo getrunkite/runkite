@@ -1,6 +1,6 @@
 # Opaque JSON numeric preservation
 
-Unreleased, source checkout only. Published v0.9.0 does not include this fix.
+Implemented in v0.10.0. Published v0.9.0 does not include this fix.
 
 Opaque agent capabilities and registry metadata must survive a read and write
 without silently changing numeric values. Standard Go interface decoding turns
