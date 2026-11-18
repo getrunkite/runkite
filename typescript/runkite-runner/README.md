@@ -10,12 +10,12 @@ optional Postgres checkpoints. `runner_kind`: `typescript-langgraphjs`.
 
 Requires Node.js 22.19 or newer, matching the locked Undici HTTP client.
 
-The 0.10.0 source contract requires matching record-aware planes and workers.
-Published 0.9.0 packages do not implement that contract. This README does not
-establish registry publication: until matching artifacts are published and
-verified, build the plane from the same checkout and run this package with
+The 0.10.0 package contract requires matching record-aware planes and workers.
+Version 0.9.0 packages do not implement that contract. For source development,
+build the plane from the same checkout and run this package with
 `npm ci && npm run build`, then `node dist/cli.js` from its directory. Unpinned
-registry installation below selects the available published version. Follow the
+registry installation below selects the available published version; check it
+against the plane before upgrading. Follow the
 [coordinated upgrade](../../docs/ops-runbook.md#assignment-identity-upgrade).
 
 | | |
