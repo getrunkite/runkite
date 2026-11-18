@@ -54,8 +54,11 @@ There is no published patched version on this date; newer Vite still depends on
 an affected release. These packages run in development/build tooling. The Go
 binary serves the resulting static assets without Node.js or Vite.
 
-The CI audit remains a failing gate. A successful local build does not resolve
-it, and upgrading within the affected range does not fix it. See
+The independent `Admin dependency audit` remains a failing gate. `Full test
+suite` can run while it fails, but the existing `test` summary requires both jobs
+to succeed. A successful local build or functional suite does not resolve the
+audit. Upgrading within the affected range does not fix it. No advisory exception
+is active. See
 [the candidate security and release record](../docs/internal/release-candidate-v0100.md#current-upstream-audit-blocker-november-18-2026)
 for the separate promptfoo remediation and the remaining Admin blocker.
 

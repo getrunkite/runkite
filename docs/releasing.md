@@ -295,6 +295,13 @@ When cutting an Apache-licensed release:
   documentation has its own mirror workflow; inspect it when changing that
   contract. These checks do not authorize a deployment or publication.
 
+The main CI check named `test` summarizes the independent `Full test suite` and
+`Admin dependency audit` jobs. Both must succeed. This preserves the existing
+required check while allowing functional qualification to finish when the audit
+finds an unresolved dependency issue. A green suite alongside a red audit or red
+summary is incomplete qualification. An advisory exception requires its own
+explicit risk decision; the job split does not grant one.
+
 ## Maintainer checklist (cut a release)
 
 1. [ ] Bump `VERSION` and matching package/Helm fields; update `CHANGELOG.md` and

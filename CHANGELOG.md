@@ -104,6 +104,11 @@ and preserve the existing tenant, TLS, checkpoint and review prerequisites.
 
 ### Fixed
 
+- Separate Admin dependency auditing from the full CI suite while preserving
+  `test` as a blocking summary of both jobs. An audit finding no longer prevents
+  backend/SDK/UI tests from executing; it still blocks the summary. No advisory
+  exception or audit threshold change is introduced.
+
 - Remove the vulnerable picomatch watcher chain from the pinned promptfoo example
   by mirroring its upstream Nunjucks/Chokidar resolution. Keep the framework pin,
   audit thresholds and native baseline/scoped qualification unchanged. This

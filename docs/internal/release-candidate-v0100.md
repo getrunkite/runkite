@@ -184,7 +184,9 @@ The separate hosted race regressions passed. The promptfoo follow-up removes
 its affected watcher closure and passes a clean local low-threshold audit,
 32 tests and both real-CLI managed-run profiles; see
 [the dependency record](promptfoo-managed-provider.md#watcher-dependency-removal-november-18-2026).
-Its new committed source still needs the hosted gate.
+The [hosted promptfoo run](https://github.com/getrunkite/runkite/actions/runs/44246706486)
+verified that follow-up at `a5ed97e`, including both native profile receipts.
+The main `test` job stopped at Admin audit before its later suites ran.
 
 The Admin audit remains blocked: its five propagated high findings originate
 in picomatch used by Vite/tinyglobby. Live registry metadata reports picomatch
@@ -195,6 +197,53 @@ the shipped static Admin app. That scope does not clear the audit or establish
 a security exception. Keep the gate and release pending until a verified fix,
 qualified dependency removal or separately reviewed risk decision exists.
 The supporting receipts are under `outputs/runkite-pr93-picomatch-20261118/`.
+
+### Independent CI qualification and the blocking summary
+
+CI separates `Full test suite` from `Admin dependency audit`. Both retain their
+existing install/tool versions and commands; the Admin audit still calls the
+unchanged high/critical gate. The existing check name `test` is retained as a
+summary that always evaluates both job results and passes only when both report
+`success`. Failure, cancellation, skipping, missing results or an unknown result
+cannot produce a green summary. Existing branch protection for `test` continues
+to cover the audit as well as functional qualification.
+
+This separation lets the backend/SDK/UI suites run while the audit reports an
+unfixed advisory. It does not approve that advisory, lower its severity or make
+a successful functional job sufficient for merge/release. Local validation
+executes the actual summary command across 64 result combinations and verifies
+that the old suite and total audit calls are preserved. Hosted qualification of
+this CI follow-up remains necessary.
+
+### Proposed Admin advisory exception (not active)
+
+No advisory exception is implemented or approved. The following is a concrete
+risk decision for Sharan Harsoor, the project maintainer, to review separately
+from publishing the CI separation:
+
+- Accept only `GHSA-fc5q-39xc-vjpf` originating at Admin's locked picomatch 4.0.5
+  and its five propagated development/build findings. No other project,
+  dependency/advisory root or production use is covered. This accepts known
+  build-tool denial-of-service risk; it does not fix the vulnerability.
+- Bind any future exception to these exact source inputs. The SHA256 for
+  `admin-ui/package.json` is
+  `589b51689b7fd8d0b7be89dfa6775cdf3eba53ee9f23fad771c49fd336951e84`;
+  the SHA256 for `admin-ui/package-lock.json` is
+  `d07e1958b224e724ec30dd498e2c02468976bb4949e1268e3bc64d84b65b3788`.
+  A changed closure or a different/additional finding requires fresh review.
+- Expire at `2026-11-25T00:00:00Z`, or seven days after approval, whichever is
+  earlier. No automatic renewal. Revoke earlier when a verified upstream fix
+  becomes available or production reachability is identified. The reviewed
+  build uses repository-controlled patterns; arbitrary untrusted patterns and
+  exposed Vite development servers are outside this scope.
+- Retain the raw audit evidence and visibly label the accepted risk. A future
+  approved filter would accept only this exact case and keep other high/critical
+  findings blocking. All functional, image, artifact and remaining release gates
+  would still need to pass. Do not report zero vulnerabilities or a fixed package.
+- Record the maintainer's explicit approval and time before activating anything.
+  A successful CI-isolation commit or permission to edit code is not approval of
+  this proposed security exception. Until then the audit and `test` summary
+  continue to fail on the current advisory.
 
 ## Remaining candidate and publication gates
 
