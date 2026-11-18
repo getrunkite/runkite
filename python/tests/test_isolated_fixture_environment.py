@@ -5,10 +5,12 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import shlex
 import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -22,6 +24,113 @@ spec.loader.exec_module(fixture)
 
 
 class FixtureEnvironmentTests(unittest.TestCase):
+    def _check_policy_launcher(self, launcher, receipt_relative):
+        with tempfile.TemporaryDirectory(prefix="policy launcher ") as temporary:
+            root = Path(temporary)
+            tools = root / "owned tools"
+            scripts = root / "scripts"
+            tools.mkdir()
+            scripts.mkdir()
+            output = root / "policy evidence"
+            (output / "runtime").mkdir(parents=True)
+            prover = root / "public tools" / "openshell prover"
+            prover.parent.mkdir()
+            prover.touch()
+            child = fixture.sterile_environment(
+                root / "child environment", source={"PATH": str(Path(sys.executable).parent) + os.pathsep + os.defpath}
+            )
+            child.update(
+                {
+                    "RUNKITE_TEST_ISOLATED": "1",
+                    "RUNKITE_TEST_ISOLATED_CLI": str(tools / "openshell"),
+                    "RUNKITE_TEST_ISOLATED_GATEWAY": "https://127.0.0.1:12345",
+                    "RUNKITE_TEST_ISOLATED_IMAGE": "sha256:" + "a" * 64,
+                }
+            )
+            for name in (
+                "RUNKITE_TEST_OPENSHELL_PROVER",
+                "QUALIFICATION_OUTPUT",
+                "RUNKITE_TEST_POLICY_OUTPUT",
+                "OPENAI_API_KEY",
+            ):
+                self.assertNotIn(name, child)
+            selected = root / "child environment.json"
+            selected.write_text(json.dumps(child))
+            shim = root / "reset environment.py"
+            shim.write_text(
+                "import json, os, sys\nfrom pathlib import Path\n"
+                "environment = json.loads(Path(os.environ['LAUNCHER_ENVIRONMENT']).read_text())\n"
+                "executable = sys.executable if sys.argv[1] == 'python' else '/bin/bash'\n"
+                "os.execve(executable, [executable, *sys.argv[2:]], environment)\n"
+            )
+            for name in ("python", "bash"):
+                executable = tools / name
+                executable.write_text('#!/bin/sh\nexec "$LAUNCHER_PYTHON" -I "$LAUNCHER_SHIM" ' + name + ' "$@"\n')
+                executable.chmod(0o700)
+            (scripts / "qualify-isolated.py").write_text(
+                "import argparse, json, os\nfrom pathlib import Path\n"
+                "parser = argparse.ArgumentParser()\n"
+                "for name in ['cli', 'gateway', 'image', 'prover', 'output']: parser.add_argument('--' + name, required=True)\n"
+                "args = parser.parse_args()\n"
+                "unexpected = sorted(set(os.environ) & {'RUNKITE_TEST_OPENSHELL_PROVER', 'QUALIFICATION_OUTPUT', 'RUNKITE_TEST_POLICY_OUTPUT', 'OPENAI_API_KEY', 'LAUNCHER_ENVIRONMENT', 'LAUNCHER_PYTHON', 'LAUNCHER_SHIM'})\n"
+                "Path(args.output).write_text(json.dumps({'arguments': vars(args), 'unexpected': unexpected}))\n"
+            )
+            outer = {
+                "PATH": str(tools) + os.pathsep + os.defpath,
+                "HOME": child["HOME"],
+                "QUALIFICATION_OUTPUT": str(output),
+                "RUNKITE_TEST_POLICY_OUTPUT": str(output),
+                "RUNKITE_TEST_OPENSHELL_PROVER": str(prover),
+                "OPENAI_API_KEY": "synthetic ambient credential",
+                "LAUNCHER_ENVIRONMENT": str(selected),
+                "LAUNCHER_PYTHON": sys.executable,
+                "LAUNCHER_SHIM": str(shim),
+            }
+            legacy = "python -c " + shlex.quote(
+                "import os, sys; os.execv(sys.executable, [sys.executable, 'scripts/qualify-isolated.py', "
+                "'--prover', os.environ['RUNKITE_TEST_OPENSHELL_PROVER'], "
+                "'--output', os.path.join(os.environ['QUALIFICATION_OUTPUT'], 'runtime/policy-evidence.json')])"
+            )
+            rejected = subprocess.run(
+                ["/bin/sh", "-c", legacy], cwd=root, env=outer, capture_output=True, text=True, timeout=5
+            )
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("KeyError: 'RUNKITE_TEST_OPENSHELL_PROVER'", rejected.stderr)
+            receipt = output / receipt_relative
+            self.assertFalse(receipt.exists())
+            result = subprocess.run(
+                ["/bin/sh", "-c", launcher], cwd=root, env=outer, capture_output=True, text=True, timeout=5
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            observed = json.loads(receipt.read_text())
+            self.assertEqual(
+                observed["arguments"],
+                {
+                    "cli": child["RUNKITE_TEST_ISOLATED_CLI"],
+                    "gateway": child["RUNKITE_TEST_ISOLATED_GATEWAY"],
+                    "image": child["RUNKITE_TEST_ISOLATED_IMAGE"],
+                    "prover": str(prover),
+                    "output": str(receipt),
+                },
+            )
+            self.assertEqual(observed["unexpected"], [])
+
+    def test_policy_workflow_launcher_survives_the_sterile_child_boundary(self):
+        workflow = (ROOT / ".github/workflows/openshell-policy.yml").read_text()
+        step = workflow.split("      - name: Effective and loaded policy around real confined workload execution", 1)[
+            1
+        ].split("      - name:", 1)[0]
+        self.assertIn("scripts/start-isolated-fixture.py", step)
+        script = textwrap.dedent(step.split("        run: |\n", 1)[1])
+        self._check_policy_launcher(script[script.index("python -c ") :].strip(), "runtime/policy-evidence.json")
+
+    def test_documented_policy_launcher_survives_the_sterile_child_boundary(self):
+        note = (ROOT / "docs/internal/openshell-effective-policy.md").read_text()
+        example = note.split("From the repository root, choose an unused absolute evidence directory:", 1)[1]
+        script = example.split("```sh\n", 1)[1].split("```", 1)[0]
+        self.assertIn("scripts/start-isolated-fixture.py", script)
+        self._check_policy_launcher(script[script.index("bash -ceu ") :].strip(), "policy-evidence.json")
+
     def test_only_path_is_inherited_and_owned_paths_are_private_stable(self):
         with tempfile.TemporaryDirectory() as directory:
             selected = Path(directory) / "environment"

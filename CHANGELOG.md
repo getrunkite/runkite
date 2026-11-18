@@ -149,9 +149,11 @@ and preserve the existing tenant, TLS, checkpoint and review prerequisites.
 - Harden the existing combined isolated-workload HA fixture for RFE #47 with
   deliberate child environments, shared structured evidence acceptance,
   bounded local execution/cleanup and read-only worker-cancellation absence
-  observations before the final fixture sweep. Historical qualification and
-  independent RFE #52 assessment remain separate; no new production runtime or
-  cleanup reconciler is introduced.
+  observations before the final fixture sweep. Pass OpenShell checker/evidence
+  paths explicitly across the sterile child boundary in the workflow and
+  documented reproduction, with executable command regressions. Historical
+  qualification and independent RFE #52 assessment remain separate; no new
+  production runtime or cleanup reconciler is introduced.
 
 - Reject malformed cron timezone prefixes without a parser panic, stop on zero
   or non-advancing next times, and retain the local not-due anchor for `@every`

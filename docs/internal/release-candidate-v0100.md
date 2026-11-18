@@ -133,7 +133,7 @@ the archives were not rebuilt or relabeled as that later commit.
   baseline read/write and scoped run-only each produce two managed runs and two
   runner assignments. Both promptfoo 0.125.1 profiles pass with four distinct
   runs/threads and four reference-pinned waits each; the scoped profile also
-  passes six denial probes. The AG-UI-enabled real-plane/packaged-runner fixture
+  passes six denial probes. The AG-UI-enabled real-plane/built-runner fixture
   passes all 12 cases, including its separately enabled native AG-UI behavior.
   See `langflow-{baseline,scoped}.json`, `promptfoo-{baseline,scoped}.json` and
   `logs/ag-ui-native.log`. These remain checkout examples, not registry assets.
@@ -157,6 +157,17 @@ the archives were not rebuilt or relabeled as that later commit.
   pass. Version, GoReleaser and Helm checks also pass. Local Helm is 3.19.0;
   hosted CI pins 3.16.4, so the local pass does not substitute for that toolchain.
   See `final-consistency/summary.json`.
+- [x] The OpenShell workflow and documented fixture invocation pass their
+  checker and evidence paths as explicit quoted arguments across the sterile
+  child environment. Two executable regressions reproduce the former failures
+  and verify the corrected actual command excerpts with paths containing spaces
+  and without ambient credentials. All 12 environment, 31 fixture and 16 policy
+  qualification unit tests pass. See `logs/openshell-launchers-{before,after}.log`
+  and `logs/openshell-{environment,fixture,policy}-tests.log`. This qualifies the
+  launcher contract, not a new hosted native-policy execution. The workflow's
+  path filters include its environment helper dependency. Actionlint with actual
+  ShellCheck passes; use `logs/openshell-actionlint-shellcheck-root.log` for that
+  result, separately from the child process's denied Docker access.
 
 These are local candidate checks, not tagged release or published-image evidence.
 The snapshot's metadata still names the existing `v0.9.0` Git tag as build
@@ -170,15 +181,18 @@ report `needs_publish`; they establish neither upload authority nor availability
   approved publication path. Hosted qualification must run on that exact
   published candidate before tagging.
 - [ ] Qualify the exact assembled candidate in hosted CI, including the pinned
-  Langflow baseline and run-only scoped caller, promptfoo baseline and scoped
-  native CLI, and AG-UI native delivery/detach/reattach/Stop workflows. The local
-  passes above do not replace these hosted gates. Retain their separate receipts.
+  OpenShell native-policy check, Langflow baseline and run-only scoped caller,
+  promptfoo baseline and scoped native CLI, and AG-UI native
+  delivery/detach/reattach/Stop workflows. The local passes above do not replace
+  these hosted gates. Retain their separate receipts.
   Follow the [integrated gates](ecosystem-integration-checklist.md#qualify-the-integrated-contracts)
   and the explicit manual external-runtime qualification boundary.
 - [ ] Complete Linux amd64 candidate image qualification for all three images.
   The local arm64 passes do not qualify amd64 or published multi-platform
   indexes. Verify both actual published variants after release as listed below;
   archive execution inside an older cached image does not satisfy this gate.
+  Ordinary CI image scans currently use the default `dev` plane build metadata;
+  they do not establish the identity of a version-stamped release image.
 - [ ] Verify each package's genuine publication authority before tagging.
   Previous matching-existing npm checks did not establish successful npm OIDC;
   preserve the [actual v0.9.0 authentication record](release-verification-v090.md#registry-publication-and-authentication).

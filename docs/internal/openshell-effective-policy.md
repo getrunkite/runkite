@@ -114,9 +114,17 @@ python scripts/start-isolated-fixture.py \
     --cli "$RUNKITE_TEST_ISOLATED_CLI" \
     --gateway "$RUNKITE_TEST_ISOLATED_GATEWAY" \
     --image "$RUNKITE_TEST_ISOLATED_IMAGE" \
-    --prover "$RUNKITE_TEST_OPENSHELL_PROVER" \
-    --output "$RUNKITE_TEST_POLICY_OUTPUT/policy-evidence.json"'
+    --prover "$1" \
+    --output "$2"' policy-qualification \
+    "$RUNKITE_TEST_OPENSHELL_PROVER" \
+    "$RUNKITE_TEST_POLICY_OUTPUT/policy-evidence.json"
 ```
+
+The outer shell resolves the explicit prover and output arguments before the
+fixture resets its child environment. The child receives only the selected
+runtime settings; it does not inherit the parent evidence/prover variables or
+ambient credentials. Keep these path arguments quoted, including paths with
+spaces. The hosted workflow follows the same boundary.
 
 Use `--docker-socket /absolute/path/to/local/docker.sock` on the wrapper when
 the local engine does not use its default socket. Remote Docker endpoints and
