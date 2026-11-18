@@ -106,8 +106,12 @@ and preserve the existing tenant, TLS, checkpoint and review prerequisites.
 
 - Separate Admin dependency auditing from the full CI suite while preserving
   `test` as a blocking summary of both jobs. An audit finding no longer prevents
-  backend/SDK/UI tests from executing; it still blocks the summary. No advisory
-  exception or audit threshold change is introduced.
+  backend/SDK/UI tests from executing; it still blocks the summary. Prepare the
+  conditionally approved Admin-only picomatch exception with exact dependency
+  hashes, the complete reviewed audit report and a November 25 expiry. It remains
+  inactive until successful full hosted qualification is verified. Admin accepts
+  only zero findings or that exact case; other npm callers retain their existing
+  high/critical threshold. Original audit findings and accepted risk stay visible.
 
 - Remove the vulnerable picomatch watcher chain from the pinned promptfoo example
   by mirroring its upstream Nunjucks/Chokidar resolution. Keep the framework pin,

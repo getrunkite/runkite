@@ -39,6 +39,9 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Test npm audit policy
+        run: python3 -m unittest discover -s python/tests -p test_npm_audit_policy.py -v
+
       - name: Audit Admin dependencies
         working-directory: admin-ui
         run: |

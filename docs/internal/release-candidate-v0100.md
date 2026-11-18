@@ -201,31 +201,43 @@ The supporting receipts are under `outputs/runkite-pr93-picomatch-20261118/`.
 ### Independent CI qualification and the blocking summary
 
 CI separates `Full test suite` from `Admin dependency audit`. Both retain their
-existing install/tool versions and commands; the Admin audit still calls the
-unchanged high/critical gate. The existing check name `test` is retained as a
+existing install/tool versions and commands. Admin requires either a complete
+zero-finding report or the exact approved exception case. Its guarded exception
+is inactive until the full-suite prerequisite has been verified. Other npm
+callers retain their existing high/critical threshold and genuine audit-API
+outage warnings; unreadable, duplicate-key and non-finite reports fail. Missing
+or inconsistent Admin data always fails. The existing check name `test` is retained as a
 summary that always evaluates both job results and passes only when both report
 `success`. Failure, cancellation, skipping, missing results or an unknown result
 cannot produce a green summary. Existing branch protection for `test` continues
 to cover the audit as well as functional qualification.
 
 This separation lets the backend/SDK/UI suites run while the audit reports an
-unfixed advisory. It does not approve that advisory, lower its severity or make
-a successful functional job sufficient for merge/release. Local validation
+unfixed advisory. It does not activate the conditionally approved exception,
+lower advisory severity or make a successful functional job sufficient for
+merge/release. Local validation
 executes the actual summary command across 64 result combinations and verifies
 that the old suite and total audit calls are preserved. Hosted qualification of
 this CI follow-up remains necessary.
 
-### Proposed Admin advisory exception (not active)
+<a id="proposed-admin-advisory-exception-not-active"></a>
 
-No advisory exception is implemented or approved. The following is a concrete
-risk decision for Sharan Harsoor, the project maintainer, to review separately
-from publishing the CI separation:
+### Conditionally approved Admin advisory exception (inactive)
+
+Sharan Harsoor approved the following terms only after the full hosted CI suite
+passes. The conditional approval was recorded on November 18, 2026 at
+`06:20:46Z`. The policy record remains `pending-full-ci` with no qualification
+receipt: PR #93 has not yet run the new `Full test suite` job. Its earlier
+`race-regressions` result and the other standalone jobs do not satisfy this
+condition. No exception is currently active.
+
+The reviewed terms are:
 
 - Accept only `GHSA-fc5q-39xc-vjpf` originating at Admin's locked picomatch 4.0.5
   and its five propagated development/build findings. No other project,
   dependency/advisory root or production use is covered. This accepts known
   build-tool denial-of-service risk; it does not fix the vulnerability.
-- Bind any future exception to these exact source inputs. The SHA256 for
+- Bind activation to these exact source inputs. The SHA256 for
   `admin-ui/package.json` is
   `589b51689b7fd8d0b7be89dfa6775cdf3eba53ee9f23fad771c49fd336951e84`;
   the SHA256 for `admin-ui/package-lock.json` is
@@ -233,17 +245,66 @@ from publishing the CI separation:
   A changed closure or a different/additional finding requires fresh review.
 - Expire at `2026-11-25T00:00:00Z`, or seven days after approval, whichever is
   earlier. No automatic renewal. Revoke earlier when a verified upstream fix
-  becomes available or production reachability is identified. The reviewed
+  becomes available, the advisory is withdrawn or production reachability is
+  identified. The reviewed
   build uses repository-controlled patterns; arbitrary untrusted patterns and
   exposed Vite development servers are outside this scope.
-- Retain the raw audit evidence and visibly label the accepted risk. A future
-  approved filter would accept only this exact case and keep other high/critical
-  findings blocking. All functional, image, artifact and remaining release gates
-  would still need to pass. Do not report zero vulnerabilities or a fixed package.
-- Record the maintainer's explicit approval and time before activating anything.
-  A successful CI-isolation commit or permission to edit code is not approval of
-  this proposed security exception. Until then the audit and `test` summary
-  continue to fail on the current advisory.
+- Retain the raw audit evidence and visibly label the accepted risk. The guarded
+  evaluator accepts only this exact case after activation and keeps other
+  high/critical findings blocking. All functional, image, artifact and remaining
+  release gates must still pass. Do not report zero vulnerabilities or a fixed
+  package. Missing or inconsistent Admin audit data cannot establish eligibility.
+- Before activation, record a verified successful `Full test suite` job from the
+  hosted `CI` workflow for the reviewed source, including its exact commit, run,
+  attempt, job and completion time. Check the other applicable hosted jobs too.
+  This is maintainer-reviewed qualification evidence, not cryptographic
+  attestation or a live API verification by the audit helper. The existing
+  `test` summary still requires the current full suite and audit result on every
+  later run; an older receipt never waives current tests. Until this prerequisite
+  is satisfied the policy stays inactive and the known finding remains blocking.
+
+### Guard implementation and activation procedure
+
+The trusted record is [scripts/admin-audit-exception.json](../../scripts/admin-audit-exception.json).
+The wrapper captures one npm response and command status, then evaluates that
+same evidence with [npm_audit_policy.py](../../scripts/npm_audit_policy.py).
+The original report is printed in the CI log. An active acceptance emits an
+explicit warning that five HIGH findings remain, with the advisory and expiry;
+it does not rewrite the report or call a second audit endpoint for its verdict.
+There is no CLI or environment switch to activate a policy or override its clock.
+
+Eligibility binds the complete canonical npm v2 report, including all five
+propagated entries, advisory source, paths, ranges, fix suggestions and metadata.
+A changed report needs fresh review even when the difference looks harmless.
+The fixed approval/expiry bounds, manifest/lockfile hashes and development-only
+lock entries are checked too. Ordinary Admin success requires zero findings;
+lower-severity-only and malformed reports cannot disguise an unapproved case.
+
+Activation still requires these separate maintainer actions:
+
+1. Publish the CI separation and obtain a successful hosted `Full test suite`
+   job for the reviewed source. An older local result, standalone race job or
+   another job with a successful status is not a substitute.
+2. Verify that job and the other applicable checks using GitHub's actual run
+   and job records. Review the exact source, Admin application/build/serving
+   boundary and original audit report again. Input hashes do not analyze
+   production reachability or bind every source file. Changes to that boundary
+   require explicit re-review and deactivation when outside the approved scope.
+3. Record the reviewed repository/workflow/job, run ID/attempt/URL, head SHA,
+   successful conclusion/completion time, verifier and input hashes in
+   `qualification`; then set `status` to `active`. Do not invent a successful
+   receipt, infer it from the approval, extend the expiry or use test fixtures.
+4. Run CI again on the activated commit. The current `test` summary still
+   requires both its complete functional suite and audit-policy job to succeed.
+   Other image, artifact, manual qualification and release checks remain required.
+
+The 33 policy regressions include exact acceptance only in private temporary
+fixtures with a frozen test clock, and real-clock rejection of the actual
+pending record. Source drift, new/hidden findings, expired or missing authority,
+malformed input and single-response evidence handling are covered. These tests
+do not establish successful hosted qualification or activate the checked-in
+record. Local guard evidence is retained under
+`outputs/runkite-pr93-ci-isolation-20261118/`.
 
 ## Remaining candidate and publication gates
 

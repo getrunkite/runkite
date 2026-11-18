@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "status": "pending-full-ci",
+  "owner": "Sharan Harsoor",
+  "approval_recorded_at": "2026-11-18T06:20:46Z",
+  "expires_at": "2026-11-25T00:00:00Z",
+  "condition": "Activate only after the full hosted CI test suite passes and the maintainer records verified qualification.",
+  "advisory": "GHSA-fc5q-39xc-vjpf",
+  "manifest_sha256": "589b51689b7fd8d0b7be89dfa6775cdf3eba53ee9f23fad771c49fd336951e84",
+  "lockfile_sha256": "d07e1958b224e724ec30dd498e2c02468976bb4949e1268e3bc64d84b65b3788",
+  "qualification": null
+}

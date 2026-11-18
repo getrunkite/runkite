@@ -57,8 +57,13 @@ binary serves the resulting static assets without Node.js or Vite.
 The independent `Admin dependency audit` remains a failing gate. `Full test
 suite` can run while it fails, but the existing `test` summary requires both jobs
 to succeed. A successful local build or functional suite does not resolve the
-audit. Upgrading within the affected range does not fix it. No advisory exception
-is active. See
+audit. Upgrading within the affected range does not fix it. The maintainer
+conditionally approved a short exception for this exact locked build closure,
+but it remains inactive until the full hosted suite passes and its qualification
+is recorded. Admin now requires a complete zero-finding report or that exact
+approved case; new findings and unavailable or inconsistent audit evidence fail.
+The original findings remain visible. This does not infer production reachability
+from dependency hashes. See
 [the candidate security and release record](../docs/internal/release-candidate-v0100.md#current-upstream-audit-blocker-november-18-2026)
 for the separate promptfoo remediation and the remaining Admin blocker.
 
