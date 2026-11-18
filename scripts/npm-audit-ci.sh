@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fail on high/critical findings using the captured report once. The Admin
-# exception is conditional, source-bound and inactive until reviewed activation.
+# exception requires reviewed qualification and exact source-bound eligibility.
 set -u
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 tmp="$(mktemp)"

@@ -46,7 +46,9 @@ durable-run reconciliation and tool-authorization hop state. Copy-only edits nor
 existing checks, not new snapshots of the same text. To inspect a production
 bundle locally, use `npm run preview` or serve the rebuilt Go plane.
 
-## Current dependency audit blocker (November 18, 2026)
+<a id="current-dependency-audit-blocker-november-18-2026"></a>
+
+## Dependency audit risk (November 18, 2026)
 
 The Admin build closure still reports five propagated high findings for
 [picomatch GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
@@ -54,18 +56,20 @@ There is no published patched version on this date; newer Vite still depends on
 an affected release. These packages run in development/build tooling. The Go
 binary serves the resulting static assets without Node.js or Vite.
 
-The independent `Admin dependency audit` remains a failing gate. `Full test
-suite` can run while it fails, but the existing `test` summary requires both jobs
-to succeed. A successful local build or functional suite does not resolve the
-audit. Upgrading within the affected range does not fix it. The maintainer
-conditionally approved a short exception for this exact locked build closure,
-but it remains inactive until the full hosted suite passes and its qualification
-is recorded. Admin now requires a complete zero-finding report or that exact
-approved case; new findings and unavailable or inconsistent audit evidence fail.
-The original findings remain visible. This does not infer production reachability
-from dependency hashes. See
+The maintainer-approved exception is active after all 53 steps of the
+[hosted full suite](https://github.com/getrunkite/runkite/actions/runs/44263244785/job/134661476644)
+passed at `47534f3`. It covers only the exact reviewed dependency files and
+five findings, and expires at `2026-11-25T00:00:00Z` without automatic renewal.
+The audit retains the raw findings and emits an accepted-risk warning.
+Upgrading within the affected range does not fix the vulnerability.
+
+The independent `Admin dependency audit` accepts a complete zero-finding report
+or this exact approved case. New findings, changed inputs and unavailable or
+inconsistent audit evidence fail. The existing `test` summary requires both the
+current full suite and audit to succeed on every commit. Dependency hashes do
+not establish production reachability. See
 [the candidate security and release record](../docs/internal/release-candidate-v0100.md#current-upstream-audit-blocker-november-18-2026)
-for the separate promptfoo remediation and the remaining Admin blocker.
+for the qualification, revocation conditions and separate promptfoo remediation.
 
 ## Operator semantics
 

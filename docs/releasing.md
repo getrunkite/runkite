@@ -302,6 +302,13 @@ finds an unresolved dependency issue. A green suite alongside a red audit or red
 summary is incomplete qualification. An advisory exception requires its own
 explicit risk decision; the job split does not grant one.
 
+The exact Admin-only picomatch exception is active after verified full hosted
+qualification at `47534f3` and expires at `2026-11-25T00:00:00Z`. It retains five
+HIGH findings as accepted build-tool risk. Follow the
+[qualification and revocation record](internal/release-candidate-v0100.md#qualified-admin-advisory-exception)
+before release. It cannot waive the current suite, another finding, changed
+inputs, manual qualification or artifact gates, and it must not auto-renew.
+
 ## Maintainer checklist (cut a release)
 
 1. [ ] Bump `VERSION` and matching package/Helm fields; update `CHANGELOG.md` and

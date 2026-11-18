@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "status": "pending-full-ci",
+  "status": "active",
   "owner": "Sharan Harsoor",
   "approval_recorded_at": "2026-11-18T06:20:46Z",
   "expires_at": "2026-11-25T00:00:00Z",
@@ -8,5 +8,18 @@
   "advisory": "GHSA-fc5q-39xc-vjpf",
   "manifest_sha256": "589b51689b7fd8d0b7be89dfa6775cdf3eba53ee9f23fad771c49fd336951e84",
   "lockfile_sha256": "d07e1958b224e724ec30dd498e2c02468976bb4949e1268e3bc64d84b65b3788",
-  "qualification": null
+  "qualification": {
+    "repository": "getrunkite/runkite",
+    "workflow": ".github/workflows/ci.yml",
+    "job": "test-suite",
+    "conclusion": "success",
+    "run_id": 44263244785,
+    "run_attempt": 1,
+    "head_sha": "47534f39fea69bcd162f7c07c5f3b07bd4a851d1",
+    "run_url": "https://github.com/getrunkite/runkite/actions/runs/44263244785",
+    "completed_at": "2026-11-18T08:30:19Z",
+    "verified_by": "Sharan Harsoor",
+    "manifest_sha256": "589b51689b7fd8d0b7be89dfa6775cdf3eba53ee9f23fad771c49fd336951e84",
+    "lockfile_sha256": "d07e1958b224e724ec30dd498e2c02468976bb4949e1268e3bc64d84b65b3788"
+  }
 }

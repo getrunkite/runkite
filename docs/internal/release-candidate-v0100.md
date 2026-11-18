@@ -175,7 +175,9 @@ context. Cached Linux images used to execute archive binaries are not candidate
 image qualification. Registry preflight receipts for all four package projects
 report `needs_publish`; they establish neither upload authority nor availability.
 
-## Current upstream audit blocker, November 18, 2026
+<a id="current-upstream-audit-blocker-november-18-2026"></a>
+
+## Admin dependency risk, November 18, 2026
 
 [PR #93](https://github.com/getrunkite/runkite/pull/93) reached hosted checks.
 The Admin and promptfoo audit steps stopped on
@@ -186,16 +188,17 @@ its affected watcher closure and passes a clean local low-threshold audit,
 [the dependency record](promptfoo-managed-provider.md#watcher-dependency-removal-november-18-2026).
 The [hosted promptfoo run](https://github.com/getrunkite/runkite/actions/runs/44246706486)
 verified that follow-up at `a5ed97e`, including both native profile receipts.
-The main `test` job stopped at Admin audit before its later suites ran.
+The original main `test` job stopped at Admin audit before its later suites ran.
 
-The Admin audit remains blocked: its five propagated high findings originate
+The Admin audit still reports five propagated high findings originating
 in picomatch used by Vite/tinyglobby. Live registry metadata reports picomatch
 4.0.7 as latest, still within the advisory's affected range, and Vite 8.3.8
 retains it. The advisory lists no fixed version and is not withdrawn. These
 are build/dev dependencies; no corresponding matcher path was identified in
-the shipped static Admin app. That scope does not clear the audit or establish
-a security exception. Keep the gate and release pending until a verified fix,
-qualified dependency removal or separately reviewed risk decision exists.
+the shipped static Admin app. That scope does not fix the vulnerability or
+establish eligibility by itself. The separately approved, qualified exception
+below now accepts this exact build-tool risk until November 25 at 00:00 UTC.
+All other audit, current functional and remaining release gates stay blocking.
 The supporting receipts are under `outputs/runkite-pr93-picomatch-20261118/`.
 
 ### Independent CI qualification and the blocking summary
@@ -203,7 +206,7 @@ The supporting receipts are under `outputs/runkite-pr93-picomatch-20261118/`.
 CI separates `Full test suite` from `Admin dependency audit`. Both retain their
 existing install/tool versions and commands. Admin requires either a complete
 zero-finding report or the exact approved exception case. Its guarded exception
-is inactive until the full-suite prerequisite has been verified. Other npm
+requires verified full-suite qualification, recorded below. Other npm
 callers retain their existing high/critical threshold and genuine audit-API
 outage warnings; unreadable, duplicate-key and non-finite reports fail. Missing
 or inconsistent Admin data always fails. The existing check name `test` is retained as a
@@ -213,24 +216,35 @@ cannot produce a green summary. Existing branch protection for `test` continues
 to cover the audit as well as functional qualification.
 
 This separation lets the backend/SDK/UI suites run while the audit reports an
-unfixed advisory. It does not activate the conditionally approved exception,
+unfixed advisory. This separation alone does not activate an exception,
 lower advisory severity or make a successful functional job sufficient for
 merge/release. Local validation
 executes the actual summary command across 64 result combinations and verifies
-that the old suite and total audit calls are preserved. Hosted qualification of
-this CI follow-up remains necessary.
+that the old suite and total audit calls are preserved. The recorded hosted
+qualification below passed every step of the full suite.
 
 <a id="proposed-admin-advisory-exception-not-active"></a>
+<a id="conditionally-approved-admin-advisory-exception-inactive"></a>
 
-### Conditionally approved Admin advisory exception (inactive)
+### Qualified Admin advisory exception
 
-Sharan Harsoor approved the following terms only after the full hosted CI suite
-passes. The conditional approval was recorded on November 18, 2026 at
-`06:20:46Z`. The policy record remains `pending-full-ci` with no qualification
-receipt. The first [hosted full-suite job](https://github.com/getrunkite/runkite/actions/runs/44256456058/job/134639198312)
-at `d76e069` failed its governance run-binding fixture. That failure does not
-satisfy the condition, and neither do the separate race/standalone job results.
-No exception is currently active.
+Sharan Harsoor conditionally approved the following terms on November 18, 2026
+at `06:20:46Z`, requiring the full hosted CI suite to pass first. That condition
+is now satisfied. The policy record is `active`, with verified qualification
+for commit `47534f39fea69bcd162f7c07c5f3b07bd4a851d1`,
+[CI run 44263244785, attempt 1, Full test suite job 134661476644](https://github.com/getrunkite/runkite/actions/runs/44263244785/job/134661476644).
+All 53 recorded steps completed successfully, with no skipped steps. The job
+completed at `2026-11-18T08:30:19Z`; the other 18 applicable PR checks passed.
+The Admin audit and its `test` summary still failed while the policy was inactive.
+The manual `combined-ha` gate was not run and remains separate release work.
+
+The exact Admin manifest/lockfile, original audit response, source and serving
+boundary were rechecked before activation. The original five HIGH findings
+remain; this is accepted build-tool risk, not a vulnerability fix. It expires
+at `2026-11-25T00:00:00Z` without automatic renewal. Both earlier hosted runs
+described below failed and were excluded from the qualification. Saved run,
+job, source, upstream and raw audit evidence is retained under
+`outputs/runkite-pr93-ci-isolation-20261118/hosted-44263244785/`.
 
 The reviewed terms are:
 
@@ -261,8 +275,8 @@ The reviewed terms are:
   This is maintainer-reviewed qualification evidence, not cryptographic
   attestation or a live API verification by the audit helper. The existing
   `test` summary still requires the current full suite and audit result on every
-  later run; an older receipt never waives current tests. Until this prerequisite
-  is satisfied the policy stays inactive and the known finding remains blocking.
+  later run; an older receipt never waives current tests. A missing or invalid
+  prerequisite keeps the exception inactive and the known finding blocking.
 
 ### Hosted governance fixture follow-up, November 18, 2026
 
@@ -286,8 +300,8 @@ passed against an owned loopback `pgvector/pgvector:pg16` fixture. All eight
 record, generation-zero and runner-kind ownership checks. Evidence is retained
 under `outputs/runkite-pr93-governance-fixture-20261118/`. The hosted run's other
 38 Go packages passed, but later SDK/E2E steps were skipped after the API package
-failed. A fresh complete hosted suite is required before activating the
-conditional exception; the failed run cannot supply its qualification receipt.
+failed. This failed run could not supply the exception's qualification receipt;
+the later successful job above provides that separate evidence.
 
 ### Hosted ADK tracing fixture follow-up, November 18, 2026
 
@@ -305,8 +319,8 @@ two tests retain their explicit native end-to-end prerequisites. The tracing
 test still checks native spans while rejecting prompt, tool and output content.
 Evidence is retained under
 `outputs/runkite-pr93-ci-isolation-20261118/adk-tracing-fixture/`. This failed
-hosted run cannot qualify the conditional Admin exception either. Later hosted
-SDK and end-to-end stages still require a complete successful run.
+hosted run could not qualify the conditional Admin exception either. The later
+successful job above includes the subsequent SDK and end-to-end stages.
 
 ### Guard implementation and activation procedure
 
@@ -325,7 +339,9 @@ The fixed approval/expiry bounds, manifest/lockfile hashes and development-only
 lock entries are checked too. Ordinary Admin success requires zero findings;
 lower-severity-only and malformed reports cannot disguise an unapproved case.
 
-Activation still requires these separate maintainer actions:
+Activation requires these separate maintainer actions. The recorded evidence
+above completes steps 1 through 3; step 4 remains mandatory on the activated
+commit and every later change:
 
 1. Publish the CI separation and obtain a successful hosted `Full test suite`
    job for the reviewed source. An older local result, standalone race job or
@@ -343,9 +359,10 @@ Activation still requires these separate maintainer actions:
    requires both its complete functional suite and audit-policy job to succeed.
    Other image, artifact, manual qualification and release checks remain required.
 
-The 33 policy regressions include exact acceptance only in private temporary
-fixtures with a frozen test clock, and real-clock rejection of the actual
-pending record. Source drift, new/hidden findings, expired or missing authority,
+The 33 policy regressions include exact acceptance in private temporary
+fixtures with a frozen test clock, real-clock rejection of pending records and
+validation of the checked-in activation's complete qualification. Source drift,
+new/hidden findings, expired or missing authority,
 malformed input and single-response evidence handling are covered. These tests
 do not establish successful hosted qualification or activate the checked-in
 record. Local guard evidence is retained under
