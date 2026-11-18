@@ -4,7 +4,13 @@
 
 ## Current status of this walkthrough
 
-- **Unreleased assignment identity protocol 1:** matching planes and runners
+For the connected engineering story after this walkthrough's original releases,
+start with the [engineering notebook](engineering-notebook/README.md). It follows
+ownership, recovery, authority, integrations and release evidence through
+v0.10.0, with code references and self-study questions. The historical chapters
+below remain intact; their examples are not a substitute for current contracts.
+
+- **Released in v0.10.0, assignment identity protocol 1:** matching planes and runners
   negotiate capability 1, echo original-record identity and generation, and
   keep event/cancel namespaces separate across run-ID reuse. Follow the
   [contract](assignment-identity.md) and [upgrade](../ops-runbook.md#assignment-identity-upgrade).
@@ -12,7 +18,7 @@
   Postgres/SQLite or 24 on MySQL, plus record-bound terminal-hook claims. Back up
   and drain all writers; legacy unbound rows are preserved and collisions need
   explicit reconciliation rather than automatic identity backfill.
-  Current-source Kafka is refused unless its non-atomic compatibility mode is
+  v0.10.0 Kafka is refused unless its non-atomic compatibility mode is
   explicitly enabled. Redis does not add queue CAS; older Kafka statements in
   this historical walkthrough are not qualification of atomic HA fencing.
 

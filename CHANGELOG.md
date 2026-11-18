@@ -4,6 +4,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+- Add a connected [engineering notebook](docs/internal/engineering-notebook/README.md)
+  through v0.10.0, with five source-backed chapters, a decision map and study
+  prompts. Preserve the historical walkthrough and distinguish recorded history,
+  reconstructed rationale and current implementation. This is a documentation
+  addition, separate from the immutable v0.10.0 artifact payloads.
+
 - Release-controller follow-up: npm public-artifact verification waits up to
   300 seconds for registry visibility after upload, matching the existing PyPI
   bound. Authentication errors and content mismatches still fail immediately;
