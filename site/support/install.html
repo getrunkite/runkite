@@ -92,6 +92,7 @@
         </p>
 
         <h2 id="packages">Choose the component you need</h2>
+        <p class="note"><strong>Upgrading to v0.10.0:</strong> stop submissions and cron dispatch, drain assignments and stop all writers. Verify restorable database, queue and receipt backups, apply Postgres/SQLite migration 23 or MySQL migration 24, and deploy matching protocol-1 planes and runners. Reconcile legacy accounting, hook claims and ambiguous receipts before restoring traffic. Follow the <a href="ops.html#assignment-identity-upgrade">complete coordinated upgrade</a>; replacing only a runner or an image is insufficient.</p>
         <p>Runkite publishes one control-plane binary, two Python packages, two npm packages and three container images. Start with a control plane, then choose runners or decision helpers for your application. Binary and container forms are deployment alternatives.</p>
         <div class="table-wrap" tabindex="0" role="region" aria-label="Published Runkite packages">
           <table class="matrix">

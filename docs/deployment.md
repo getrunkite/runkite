@@ -8,6 +8,14 @@ demo Admin is currently offline; local and self-hosted deployments below are
 independent of that demo. See [public website hosting](site-hosting.md) for the
 custom domain and retained `/admin/` route.
 
+**Existing deployment upgrade to v0.10.0:** stop submissions and cron dispatch,
+drain assignments and stop every writer. Verify restorable database, queue and
+receipt backups, apply Postgres/SQLite migration 23 or MySQL migration 24, then
+deploy matching protocol-1 planes and runners. Legacy accounting, hook claims
+and ambiguous receipts require explicit reconciliation. Follow the
+[complete upgrade sequence](internal/release-candidate-v0100.md#upgrade-sequence)
+before traffic resumes. A partial or mixed-version image rollout is unsupported.
+
 ## Docker
 
 Control-plane and runner images (`Dockerfile`, `Dockerfile.runner`, `Dockerfile.runner-ts`) run as a non-root user (`uid 65532`). The control-plane image sets `DATABASE_PATH=/tmp/runkite.db` so SQLite-backed compose profiles can create the DB file without root. Every HTTP response also carries security headers (CSP, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy`, `Permissions-Policy`) -- see Known Limitations for Admin credential storage, which is a separate concern.

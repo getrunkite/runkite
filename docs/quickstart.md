@@ -5,15 +5,19 @@ own SDK loop, use the [decision-only helper](client-sdk.md#embedded-governance-h
 instead; it does not create Threads/Runs. For managed Vercel AI SDK execution,
 the [managed AI SDK example](../examples/managed_ai_sdk/README.md) includes
 the runner factory and app-side UI stream bridge. That TypeScript backend ships
-from v0.5.8. Current v0.7.0 packages also include optional managed Microsoft,
+from v0.5.8. Current v0.10.0 packages also include optional managed Microsoft,
 OpenAI Agents, Pydantic AI and Google ADK Python profiles. Compare their install
 commands and execution boundaries in
 [client integration guidance](client-sdk.md#choose-who-owns-execution).
 
-v0.7.0 adds opt-in security controls. Use matching plane and runner artifacts
-and complete the [coordinated SQL upgrade](ops-runbook.md#security-completion-upgrade)
-before enabling them. Do not combine new schema/configuration with older
-released writers. See [release verification](releasing.md).
+**Upgrading to v0.10.0:** stop submissions and cron dispatch, drain assignments
+and stop all writers. Retain restorable database, queue and receipt backups,
+apply Postgres/SQLite migration 23 or MySQL migration 24, then deploy matching
+protocol-1 planes and runners. Reconcile legacy accounting, hook claims and
+ambiguous receipts before restoring traffic. Follow the
+[coordinated upgrade](ops-runbook.md#assignment-identity-upgrade). Do not replace
+only a runner or combine new schema/configuration with older writers. See
+[release verification](releasing.md).
 
 End-to-end walkthrough: build the control plane, run an agent, stream results via SDK. Short path: [root README](../README.md#quick-start).
 
