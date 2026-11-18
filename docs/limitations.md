@@ -2,13 +2,16 @@
 
 Honest gaps, not hidden ones. Use the **Release summary** below in GitHub Release notes and launch posts; the long list after it is the full deep dive.
 
-## Unreleased current-source boundaries
+<a id="unreleased-current-source-boundaries"></a>
 
-The [source integration guide](integrations.md#unreleased-current-source) maps
-checkout additions after published v0.9.0. Their presence on `main` does not
-change an existing binary, image, wheel or npm install.
+## v0.10.0 boundaries
 
-- Assignment identity protocol 1 is Unreleased/current-source and requires
+The [integration guide](integrations.md#unreleased-current-source) distinguishes
+v0.10.0 runtime features from checkout-only caller examples and qualification
+tools. Use matching plane and runner artifacts; the release does not turn
+those source assets into registry packages.
+
+- Assignment identity protocol 1 is available in v0.10.0 and requires
   matching planes and runners. Exact run ID, original record identity and
   generation are echoed on bound HTTP and lifecycle RPCs; missing proof cannot
   borrow the current assignment. Event and cancellation namespaces keep records
@@ -85,7 +88,7 @@ change an existing binary, image, wheel or npm install.
   overlap/latest-only catch-up remain.
 - Cron shows retained rows on the schedule's thread, including rows another
   caller created. It has no receipt for a skipped overlap or failure before run
-  creation. Empty history does not mean never fired. Unreleased named-tenant
+  creation. Empty history does not mean never fired. v0.10.0 named-tenant
   routing separates new schedule threads while preserving an existing owned
   legacy thread. Default IDs remain unchanged. Stop all cron writers for a
   coordinated upgrade or rollback; mixed versions can split first-fire history.
@@ -139,7 +142,7 @@ The checkout-only [Trinity specialist example](../examples/trinity_specialist_mc
 uses the v0.9.0 MCP contract. It qualifies a pinned Trinity
 configuration shape and a real Runkite API/runner protocol path separately.
 Native Trinity runtime execution is not yet qualified. Its fixed trusted
-caller in published v0.9.0 uses a dedicated tenant read/write key. Unreleased
+caller in published v0.9.0 uses a dedicated tenant read/write key. v0.10.0
 source adds separate agent run/observe grants and durable SQL reference
 preconditions. Observation is agent-wide, not requester-private, and the first
 reference acquisition cannot prove absence of prior deletion/recreation. Neither
@@ -152,7 +155,7 @@ What to expect on the **Supported** profile (`POSTGRES_DSN` + `REDIS_URL` + auth
 | Area | Limitation |
 |------|------------|
 | **Scale-out** | Agent Protocol MCP sessions (`/mcp`) are **process-local** (sticky routing). Admin UI sessions and connector MCP capability tokens are shared when `REDIS_URL` is set; without Redis they stay process-local. Runner tokens are per-kind (optional comma allowlist for fleets/rotation), not unique per pod. SSE event streaming uses one goroutine + one Redis connection per concurrent run; per-CP ceiling is ~3,000–5,000 concurrent SSE streams before Redis connection pool pressure (mitigate by adding CP replicas). |
-| **Authz** | Route-level `read` / `write` / `admin`, plus optional `agents:<id>:run`. Unreleased source admits scoped MCP lifecycle/discovery/invocation and adds explicit agent-wide `agents:<id>:observe` on exact public GET/wait with SQL reference preconditions. Not per-tool ACLs (connector tools use policy grants and argument predicates on MCP `tools/call`). |
+| **Authz** | Route-level `read` / `write` / `admin`, plus optional `agents:<id>:run`. v0.10.0 admits scoped MCP lifecycle/discovery/invocation and adds explicit agent-wide `agents:<id>:observe` on exact public GET/wait with SQL reference preconditions. Not per-tool ACLs (connector tools use policy grants and argument predicates on MCP `tools/call`). |
 | **Tenancy** | Flat `tenant_id`; no tenant registry UI. v0.6.0 named-tenant LangGraph checkpoint access requires HTTP proxy mode; direct Postgres is limited to guarded default-tenant IDs. With client auth + `RUNNER_TOKEN_*`, `serve` requires `RUNNER_TENANTS_*` per tokenized kind (use `default` for single-tenant). |
 | **Checkpoints** | v0.6.0 direct Postgres LangGraph accepts only default-tenant thread IDs without `:`; named tenants require HTTP proxy mode plus explicit resolution of prior native history. Durable LangGraph checkpoints: **Postgres direct mode** (AsyncPostgresSaver) or **HTTP proxy mode** (opaque blobs via `/internal/checkpoints`, any CP backend). Without POSTGRES_DSN and without RUNKITE_HTTP_URL the runner falls back to in-memory; blank/whitespace `RUNKITE_HTTP_URL` counts as unset (MemorySaver), not a broken proxy attempt. `checkpoint_ref` time-travel is LangGraph-only; CP does not pre-validate that the id exists. Proxy HITL + mid-superstep pending writes (`aput_writes` / `putWrites`) are full-fidelity (blob stores checkpoint+writes; CAS merge; matrix `hitl_restart` for Python **and** TypeScript). Late writes after cancel soft-no-op on `403 run_not_inflight` (must not crash Node). Proxy `alist(filter=...)` is unsupported (raises). Proxy writes use per-blob in-process locks plus **If-Match / ETag CAS** so multi-replica GET-modify-PUT retries instead of silent clobber; GET 200 without ETag refuses the update. Envelope is shared, but Python↔TS cannot resume each other's threads (serde payloads differ). Opaque list soft-caps ~1000 (no cursor yet). **Non-LangGraph adapters** (CrewAI / LlamaIndex / AutoGen / LangChain) reuse the same HTTP proxy with a stable `adapter-state` id for **message continuity** across runs (not channel-state HITL / not full crew-memory); without `RUNKITE_HTTP_URL` they stay single-shot. See deep-dive bullet below. |
 | **Streaming** | The bridge checks generation before every publish; output and status commit atomically under a durable attempt fence. v0.6.0 run SSE, thread SSE and WebSocket recovery confirms terminal events through that durable fence, ignores superseded terminals and uses retained replay plus durable-state checks if a broker subscription closes early. Queue checks and broker publication remain separate, so raw nonterminal events can still be advisory during reclaim. Already displayed old-attempt text cannot be withdrawn; clients must respect preserved attempt identities instead of merging attempts. `/wait` returns persisted current output. Generation must exactly match the active attempt. Legacy generation `0` matches only an actual generation `0`, so older runners that omit the field must upgrade for current assignments. |
@@ -266,7 +269,7 @@ enqueue or provide exactly-once external effects. It also does not make public
 MCP interchangeable with a run-bound connector proxy. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090).
 
-**Enqueue acknowledgement errors (Unreleased).** Queue acceptance can precede a
+**Enqueue acknowledgement errors (v0.10.0).** Queue acceptance can precede a
 delivery error. Conditional rollback now preserves a committed result or an
 admitted worker and fences deletion/recreation of its original row. Only a
 pending, never-started original run may become `enqueue failed`; store failure
@@ -416,7 +419,7 @@ Honest gaps, not hidden ones:
 - **Rate limits are per-process unless `backend` is redis (or auto-selected via `REDIS_URL`).** With the memory backend, N replicas each enforce their own copy of the configured ceiling (up to N× the intended limit under load balancing). Set `"backend": "redis"` (or omit `backend` while running with `REDIS_URL`) for a shared cluster-wide ceiling -- see the `rate_limit` section above.
 - **`admission_limits` use locked COUNT+INSERT (not Redis).** Multi-replica deployments share the state store; creates for the same tenant/agent scope serialize on a DB lock so burst traffic cannot all clear a stale COUNT. Daily windows are UTC only. `a2a.max_breadth` still uses a separate check-then-create path and can overshoot under concurrent fan-out.
 - **Admin UI uses httpOnly cookie sessions + CSRF.** Login (`POST /admin-api/session`) exchanges an API key/JWT for an httpOnly `runkite_admin_session` cookie; the credential is not kept in JavaScript. Mutating `/admin-api/*` calls require `X-CSRF-Token` (from the login/status JSON). Machine clients still use `Authorization: Bearer` (no CSRF). Session lifetime is a 12h sliding TTL. With `REDIS_URL`, sessions live in Redis (`rk:admin:sess:*`) and any replica can authenticate or logout the browser; without Redis they are process-local and multi-replica Admin UI needs sticky routing to the minting replica. MCP session ownership stays process-local either way (sticky `/mcp`).
-- **Authorization is route-level plus optional agent run grants.** Permissions are `read`/`write`/`admin` at the method layer. `agents:<id>:run` unlocks run-create POST routes and, in Unreleased source, scoped MCP lifecycle/discovery/invocation (not cancel/delete/store). Unreleased `agents:<id>:observe` separately grants agent-wide exact public GET/wait with durable SQL reference preconditions; `CanRunAgent` then scopes the agent_id (see Auth and [Trust & governance](trust-governance.md)). Optional per-graph `allowed_tools` is enforced by LangGraph runners on observed stream `tool_calls` (not a full per-tool ACL engine / AuthorizeTool RPC). Connector tools use policy grants and optional argument predicates on connector MCP `tools/call` (pre-call only; not in-graph AuthorizeTool).
+- **Authorization is route-level plus optional agent run grants.** Permissions are `read`/`write`/`admin` at the method layer. `agents:<id>:run` unlocks run-create POST routes and, in v0.10.0, scoped MCP lifecycle/discovery/invocation (not cancel/delete/store). v0.10.0 `agents:<id>:observe` separately grants agent-wide exact public GET/wait with durable SQL reference preconditions; `CanRunAgent` then scopes the agent_id (see Auth and [Trust & governance](trust-governance.md)). Optional per-graph `allowed_tools` is enforced by LangGraph runners on observed stream `tool_calls` (not a full per-tool ACL engine / AuthorizeTool RPC). Connector tools use policy grants and optional argument predicates on connector MCP `tools/call` (pre-call only; not in-graph AuthorizeTool).
 - **MySQL identity isolation requires schema version 17 (v0.6.0).** Older
   default collations can equate distinct tenant/resource identifiers. Version 17
   uses MySQL 8 `utf8mb4_0900_bin` NO PAD on identity/security columns and leaves
@@ -443,7 +446,7 @@ Honest gaps, not hidden ones:
 - **Enabled shrink means durable audit does not keep the original MCP body.** The hop's trail is the preview plus ref. Retrieve is for the agent during Redis TTL, not forensics. Grants / pending / HITL / kill stay fully audited. Leave shrink off if the audit path must retain oversized results. See [Connectors](connectors.md#payload-shrink-opt-in).
 - **In-graph `allowed_tools` requires runner cooperation and is not a sandbox.** Python/TS LangGraph runners deny non-listed names observed in stream chunks before ToolNode runs. Managed AI SDK, Microsoft, OpenAI Agents, Pydantic AI and Google ADK profiles check local tool names before their bodies run, including an explicit empty deny-all list. The v0.6.0 Microsoft check uses native function middleware; a configured restriction fails before model execution when a custom client lacks that invocation boundary. Older generic adapters do not enforce this allowlist. Tools that never pass a cooperating runner hook are not filtered. There is no general `AuthorizeTool` round-trip; connector policy remains on the proxy path. See [Trust & governance](trust-governance.md).
 - **In-runner custom routes are ASGI-only.** `uvicorn` (the SDK's only custom-routes dependency) doesn't serve WSGI apps -- Flask needs an adapter (e.g. `a2wsgi.WSGIMiddleware`) wrapped around it first. Sidecar mode has no such restriction (any language, any framework).
-- **Automatic real agent schema introspection is limited to static Python LangGraph.** The runner extracts real input/output/state/config definitions from its loaded static graphs, with independent field fallbacks. Unreleased source caches these reports and adds bootstrap-only recovery after registration resets or failed publication. It does not introspect factories, TypeScript or other Python adapters. Those profiles retain their existing bootstrap defaults unless a schema is separately supplied. Visual graph structure is not a data schema, and a published definition does not attest the active worker's code. See the [Agents API](api.md#agents) and [recovery limits](internal/schema-publication-recovery.md).
+- **Automatic real agent schema introspection is limited to static Python LangGraph.** The runner extracts real input/output/state/config definitions from its loaded static graphs, with independent field fallbacks. v0.10.0 caches these reports and adds bootstrap-only recovery after registration resets or failed publication. It does not introspect factories, TypeScript or other Python adapters. Those profiles retain their existing bootstrap defaults unless a schema is separately supplied. Visual graph structure is not a data schema, and a published definition does not attest the active worker's code. See the [Agents API](api.md#agents) and [recovery limits](internal/schema-publication-recovery.md).
 - **`checkpoint_ref` time-travel is LangGraph-only.** A non-empty `checkpoint_ref` on create-run is forwarded on `RunAssignment` and mapped by the Python/TypeScript LangGraph runners to `configurable.checkpoint_id` (LangGraph's native resume-from-past-checkpoint key). Non-LangGraph runners (`generic_worker` adapters) reject it with an error event rather than silently ignoring it. The control plane does not verify that the checkpoint exists for the thread before dispatch -- an unknown id fails at the checkpointer during execution. Empty/whitespace values are treated as absent (resume from the thread's latest checkpoint).
 - **Adapter multi-turn uses the same opaque HTTP proxy, not `checkpoint_ref`.** CrewAI / LlamaIndex / AutoGen / LangChain adapters set `checkpoint_framework` and, when `RUNKITE_HTTP_URL` (or the worker http address) is set, `generic_worker` loads `GET /internal/checkpoints/{thread}/adapter-state` before execute and `PUT`s that same id after success/interrupted (not `.../latest`, which is ordered by `checkpoint_id` and can collide with LangGraph UUID blobs on a shared thread). Clients can send only the new turn; LlamaIndex restores native `chat_history`, while other adapters fold prior turns into the next invoke / AutoGen model context. Without an HTTP base URL, adapters stay single-shot (client must resend history). This is not full CrewAI crew-memory restore and not LangGraph channel-state fidelity.
 - **`serve` (not `dev`) fails closed on an insecure default posture.** Starting `serve` without a durable state backend (`POSTGRES_DSN`/`MYSQL_DSN`/`MONGO_URI`), a shared transport (`REDIS_URL`/`NATS_URL`/`KAFKA_URL`), `RUNNER_TOKEN_*`, or client-facing `auth` configured now exits `1` with a clear error instead of silently starting a single-node, fully-open instance that still passes its own `/readyz` -- found live in an external audit. Set `RUNKITE_ALLOW_INSECURE_SERVE=1` to start anyway (a private network, CI, or a deliberate quick demo are legitimate reasons); `runkite dev` is unaffected and always starts with the zero-dependency local posture.
@@ -516,7 +519,7 @@ pools. Published v0.6.1 artifacts do not implement these controls.
 - Combined external-runtime HA qualification is not missing: the v0.8.0 wrapper
   already exercises two Postgres/Redis planes, TLS, installed-worker identity,
   reclaim/receipt replay, cancellation, partial usage and bounded failover, with
-  a recorded historical hosted pass. Unreleased fixture hardening adds explicit
+  a recorded historical hosted pass. v0.10.0 fixture hardening adds explicit
   environment and structured acceptance controls plus a routine-cancellation
   sandbox-absence observation before final cleanup. Current candidate evidence
   must be measured separately. Repetition covers the partial-usage/failover
@@ -525,7 +528,7 @@ pools. Published v0.6.1 artifacts do not implement these controls.
   reconciliation. The profile remains experimental, with independent RFE #52
   assessment, production PKI rotation and long-running production soak outside
   these bounded results. See [the precise combined scope](internal/constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased).
-- The Unreleased [effective-policy qualifier](internal/openshell-effective-policy.md)
+- The v0.10.0 checkout [effective-policy qualifier](internal/openshell-effective-policy.md)
   optionally captures matching current/loaded sandbox policy and compares it
   with the original boundary using the official OpenShell 0.1.8 checker.
   It changes no production worker or authorization gate. Its passing local

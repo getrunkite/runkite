@@ -99,7 +99,9 @@ loopback OpenShell gateway and the built fixture image. Read the qualification
 results and remaining release blockers in
 [the engineering note](../../docs/internal/constrained-execution.md).
 
-## Optional effective-policy qualification (Unreleased)
+<a id="optional-effective-policy-qualification-unreleased"></a>
+
+## Optional effective-policy qualification (v0.10.0 checkout)
 
 The checkout qualifier accepts `--prover /absolute/path/to/openshell-prover`
 with the checksum-verified official OpenShell 0.1.8 CLI and checker. It creates a

@@ -1,14 +1,14 @@
 # Current-source integration and qualification checklist
 
-Status: Unreleased integration work after published v0.9.0. This document is a
-maintainer checklist, not a release announcement, merge-status tracker or claim
-that every listed path is already present in a partial feature checkout.
+Status: integration and qualification checklist for v0.10.0 and later changes.
+This is a maintainer checklist, not a publication receipt or a claim that every
+listed path is present in a partial feature checkout.
 The public entry point is [Integrations](../integrations.md#unreleased-current-source).
 
 ## Assemble the matching source tree
 
-The next authorized sequence is static graph schema recovery, optional
-tools-only connector profiles, then cron schedule preview. Schema recovery
+The v0.10.0 source includes static graph schema recovery, optional tools-only
+connector profiles and cron schedule preview. Schema recovery
 [PR #87](https://github.com/getrunkite/runkite/pull/87) merged at
 `f738af4f0b5af60f09e2d249fbd72d0795cb30b2` after all 16 hosted checks passed.
 The tools-only implementation at `60b833f` and its qualification are tracked in
@@ -174,9 +174,10 @@ not satisfy these dependencies.
 8. **Check discoverability and availability.** Run
    `python3 scripts/check-doc-links.py` and `make test-site` on the assembled
    tree. Verify Markdown destinations, support catalog/feature-map/engineering
-   navigation and all new anchors. Keep the v0.9.0 release badge, package/install
-   labels and existing animations. A later release updates versions, artifact
-   contents and labels together in its own authorized change.
+   navigation and all new anchors. Align release badges and package/install labels
+   only with actually verified artifact publication, and preserve existing
+   animations. A new release updates artifact contents and availability labels
+   together in its authorized promotion.
    Run `python3 scripts/openapi/check.py`. A route-contract check is not native
    caller qualification.
 

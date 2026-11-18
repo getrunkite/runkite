@@ -1,6 +1,7 @@
 # Langflow MCP caller boundary
 
-Status: Unreleased checkout recipe. No release or installation label changes.
+Status: checkout-only recipe included with v0.10.0 source. Its scoped MCP
+profile requires v0.10.0 plane capabilities; Langflow remains separately installed.
 
 The caller path is Langflow MCP Tools -> native LFX HTTP client -> the public
 Runkite `/mcp` transport -> an existing managed runner. Runkite owns only the

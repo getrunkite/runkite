@@ -3,11 +3,14 @@
 These integrations keep Runkite as a self-hosted operational plane. Other
 projects retain their clients, agent loops and observability backends.
 
-## Unreleased current source
+<a id="unreleased-current-source"></a>
 
-This is the entry point for the current-source additions after published
-v0.9.0. They require the matching integrated checkout; a published v0.9.0
-binary, wheel or npm package does not acquire them because a guide exists.
+## v0.10.0 integrations
+
+This guide maps the runtime additions in v0.10.0 and their separate application
+examples. Use matching v0.10.0 plane and runner artifacts for the runtime
+features. Caller recipes, UI bridges and qualification tools remain checkout
+assets where their guides say so; upgrading a package does not install them.
 Use the linked contracts and qualification commands before adopting a slice.
 The [support feature map](../site/support/feature-map.html#current-source)
 provides the same availability boundary for operators.
@@ -123,7 +126,7 @@ These examples establish bounded interoperability, not upstream endorsement.
 
 Qualify an external execution boundary:
 
-- The Unreleased [OpenShell effective-policy fixture](internal/openshell-effective-policy.md)
+- The v0.10.0 checkout [OpenShell effective-policy fixture](internal/openshell-effective-policy.md)
   adds an optional comparison to the existing disposable JSONL qualifier.
   Matching current/loaded policy snapshots are checked against the configured
   boundary by the official OpenShell 0.1.8 checker. The fresh provider-free
@@ -220,8 +223,8 @@ working interoperability, not production adoption or an endorsement.
 ## Microsoft Agent Framework: function middleware
 
 The [Python example](../examples/governance_agent_framework/README.md) attaches
-the unpublished helper's optional `GovernanceFunctionMiddleware` to local
-`FunctionTool` objects. It asks Decide once and stops on deny or pending. The
+the separately published `runkite-governance` helper's optional
+`GovernanceFunctionMiddleware` to local `FunctionTool` objects. It asks Decide once and stops on deny or pending. The
 app saves the exact proposal and continues its own operation later; it does not
 create a Runkite run or resume a managed Microsoft agent. The tested optional
 core is pinned to `agent-framework-core==1.23.0`. This middleware is separate

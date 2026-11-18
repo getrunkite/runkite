@@ -48,7 +48,7 @@ each result. Do not project a result from one version or backend onto another.
   adds deliberate child environments, shared structured acceptance and measured
   routine-cancellation absence before final cleanup. Its candidate needs actual
   executed evidence; this is not a missing HA subsystem or a self-closed RFE.
-  The Unreleased [effective-policy fixture](internal/openshell-effective-policy.md)
+  The v0.10.0 checkout [effective-policy fixture](internal/openshell-effective-policy.md)
   adds a separate current/loaded snapshot and pinned-checker comparison around
   real isolated execution. Its local pass does not expand the historical HA
   result or close this tracking issue.
@@ -205,7 +205,7 @@ explicit fixtures. Use their documented owned-infrastructure wrappers and
 retain their actual evidence. A passing local unit suite does not qualify an
 external runtime, another CNI, a different TLS proxy or an untested deployment.
 
-The Unreleased [effective-policy qualifier](internal/openshell-effective-policy.md)
+The v0.10.0 checkout [effective-policy qualifier](internal/openshell-effective-policy.md)
 has its own optional `--prover` flag and automatic Linux workflow. It inspects
 the exact observed loaded revision around a provider-free fixture and accepts
 only the pinned checker's consistent `within_boundary` result. The recorded
@@ -246,7 +246,7 @@ for the candidate being qualified. The
 [historical hosted pass](internal/constrained-execution.md#hosted-linux-evidence-november-15-2026)
 already exists; it does not automatically qualify later fixture hardening.
 
-Unreleased local and hosted qualification share structured evidence validation
+The v0.10.0 local and hosted qualification share structured evidence validation
 rather than accepting a process exit or inner pass flag alone. Fixture child
 environments exclude ambient OTLP/provider configuration. Cancellation evidence
 must first prove workload activity, matching live generation and exact sandbox

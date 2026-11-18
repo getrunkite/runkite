@@ -1,6 +1,6 @@
 # Cron retained-run visibility
 
-Status: Unreleased, current source. The original projection adds Admin
+Status: implemented in v0.10.0. The original projection adds Admin
 visibility and exact tenant navigation. The tenant-routing follow-up below
 also corrects dispatch thread selection. Overlap, catch-up, claims and retry
 behavior remain governed by the existing managed-run path.
@@ -75,7 +75,9 @@ without retained selectors keeps its existing live controls. A backend without a
 or run text instead of an ID-only fallback. Schedule table row keys encode the
 tenant/name pair as JSON so colons in either identifier cannot collide.
 
-## Named-tenant thread routing (Unreleased)
+<a id="named-tenant-thread-routing-unreleased"></a>
+
+## Named-tenant thread routing (v0.10.0)
 
 Thread IDs are globally unique, while schedule names and fire claims are scoped
 to a tenant. Previously every schedule selected `cron:<name>`. A second tenant
@@ -119,7 +121,9 @@ Configuration-file discovery still bootstraps default-tenant schedules and
 requires unique names across discovered files. The fix enables same-name
 dispatch for named schedules that the tenant-scoped store already supports.
 
-## Acknowledgement loss and fire claims (Unreleased)
+<a id="acknowledgement-loss-and-fire-claims-unreleased"></a>
+
+## Acknowledgement loss and fire claims (v0.10.0)
 
 A queue can accept a scheduled assignment, let it finish, and then return a
 delivery error. Previously the scheduler released the occurrence's fire claim
@@ -167,7 +171,7 @@ transport failures, multi-plane deployment qualification and hosted results.
 ## Scope and verification
 
 The original retained-run projection does not calculate future fire times.
-The separate Unreleased [calendar preview](cron-next-fire-preview.md) now uses
+The separate v0.10.0 [calendar preview](cron-next-fire-preview.md) now uses
 the shared backend parser through independent `include_preview=true`, without
 adding history reads to preview-only requests or preview work to history-only
 requests. It projects one future calendar boundary and cannot prove dispatch,
@@ -215,7 +219,9 @@ and preview-only requests still perform no history lookups. The 43 static-site
 tests and local-link checks passed. Hosted Linux and live backend results must
 be read separately from these local measurements.
 
-## MySQL cron claim insertion (Unreleased)
+<a id="mysql-cron-claim-insertion-unreleased"></a>
+
+## MySQL cron claim insertion (v0.10.0)
 
 MySQL fire claims use a normal atomic `INSERT` into the existing composite
 primary key `(tenant_id, schedule_name, fire_time)`. A native MySQL duplicate-key

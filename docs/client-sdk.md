@@ -136,12 +136,15 @@ It still refuses to combine generations after reclaim. See the
 [example's reconnect and retention contract](../examples/managed_ai_sdk/README.md#reattach-to-an-existing-run).
 These helpers are a v0.6.0 example update, not another client SDK package.
 
-### Managed AG-UI text transport (Unreleased)
+<a id="managed-ag-ui-text-transport-unreleased"></a>
 
-The [AG-UI application example](../examples/managed_ag_ui/README.md) is
-**source checkout only**. Published v0.9.0 does not include it or its additive
-shared-stream helpers. It pins official core, encoder and native client packages
-to `1.0.4`, protocol `1.0`, and reuses the existing managed-run lifecycle rather
+### Managed AG-UI text transport (v0.10.0)
+
+The [AG-UI application example](../examples/managed_ag_ui/README.md) and its
+shared application-stream helpers are **checkout-only assets in the v0.10.0
+source**. They are not another registry SDK; use matching v0.10.0 plane and
+runner packages for the managed execution beneath the application route. The
+example pins official core, encoder and native client packages to `1.0.4`, protocol `1.0`, and reuses the existing managed-run lifecycle rather
 than moving model execution into an application handler or the Go binary.
 
 A native `HttpAgent` calls your authenticated application route. The route

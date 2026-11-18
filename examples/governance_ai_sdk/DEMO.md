@@ -1,6 +1,7 @@
 # A local proposal, human review and one note
 
-Availability: checkout example included with v0.9.0 source. The governance
+Availability: checkout example introduced with v0.9.0 source and retained in
+v0.10.0. The governance
 decision API already exists, and the independent helpers were first published
 in v0.8.0. This scripted demo mode is an example asset, not a registry package.
 

@@ -467,7 +467,7 @@ jobs:
         if: ${{ !cancelled() && steps.registry.outcome == 'success' }}
         env:
           MANIFEST: ${{ steps.artifact.outputs.manifest_path }}
-        run: python scripts/release_artifacts.py check "$MANIFEST" --require-present --wait-seconds 30
+        run: python scripts/release_artifacts.py check "$MANIFEST" --require-present --wait-seconds 300
       - name: Record actual authentication path
         if: ${{ !cancelled() && steps.registry.outcome == 'success' }}
         env:

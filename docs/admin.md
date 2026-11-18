@@ -157,7 +157,7 @@ Mongo returns `501` on these APIs; the UI empty/error copy calls that out as a S
 
 <a id="connector-action-history-unreleased"></a>
 
-In the Unreleased source checkout, the grant editor preserves exact tenant,
+In v0.10.0, the grant editor preserves exact tenant,
 agent, connector and grant-row IDs, including surrounding whitespace. Tool lists
 use JSON string arrays such as `["read", " read ", "comma,name"]`; commas and
 spaces inside a tool name are not separators. Leave both lists empty for the

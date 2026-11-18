@@ -1,6 +1,6 @@
 # Offline static policy fixtures
 
-Status: Unreleased, source checkout only. Published v0.9.0 has live simulation
+Status: implemented in v0.10.0; example fixture files remain checkout assets. Published v0.9.0 has live simulation
 but does not include `runkite policy test`.
 
 ## Caller and boundary

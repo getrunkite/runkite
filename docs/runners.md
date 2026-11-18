@@ -118,7 +118,7 @@ managed AI SDK backend described below ships in `runkite-runner` from `v0.5.8`
 
 A run is routed to whichever runner declared the target agent: `langgraph.json`'s top-level `runner_kind` is stashed into that agent's metadata at bootstrap, and `createRun` reads it back to set `RunAssignment.runner_kind` -- not hardcoded, so a single control plane can serve a Python runner and a TypeScript runner side by side, each only ever receiving jobs for the agents its own config declared. Falls back to `python-langgraph` when an agent predates this field or its lookup fails, so every existing deployment keeps working unchanged.
 
-Unreleased current source also publishes an advisory configured-profile
+v0.10.0 also publishes an advisory configured-profile
 descriptor in `Agent.Capabilities`. Agent Detail and Try Agent distinguish
 checkpoint-dependent LangGraph features, managed successful-turn HTTP state
 and unknown profiles. This is not live runner discovery or an authorization
@@ -126,7 +126,7 @@ grant. See [descriptor fields and boundaries](internal/agent-capabilities.md).
 
 ### Dispatch generations and completion delivery
 
-Unreleased current source requires assignment identity protocol 1. Workers
+v0.10.0 requires assignment identity protocol 1. Workers
 advertise `assignment_identity_version: 1` on `GetJob` and `WatchCancels` before
 receiving work, then echo the exact `(run_id, run_incarnation_id, generation)`
 on lifecycle RPCs and bound HTTP calls. HTTP uses
@@ -156,7 +156,9 @@ the exhausted delivery leased with `+WPI`; any native redelivery still passes th
 existing generation fence and completion recovery before execution. See
 [Runner Protocol](../runner-protocol/PROTOCOL.md).
 
-### Assignment identity rollout (Unreleased)
+<a id="assignment-identity-rollout-unreleased"></a>
+
+### Assignment identity rollout (v0.10.0)
 
 Drain older queued/inflight assignments before switching all planes and runners
 in a coordinated maintenance window. Verify database, queue and receipt backups,
@@ -249,7 +251,9 @@ Kept separate rather than merged into the main compose file because a single con
 
 Live-verified end to end against a real control plane: the TypeScript runner dynamically loads a `.ts` graph, executes it with direct-mode Postgres checkpointing and store attached, streams events back, a cancel mid-execution correctly propagates through a real `WatchCancels` gRPC stream, and a full interrupt -> human approval -> `Command(resume)` -> completion round trip persists correctly across two separate runs on the same thread -- the exact same three validation gates already verified for the Python runner (VG-001/002/003), now proven independently in a second language. Happy-path TS × backend combinations are also regression-guarded by `make test-matrix` / the nightly Matrix workflow; cancel and HITL for TypeScript remain manual (matrix's cancel/HITL scenarios are LangGraph-Python example agents today).
 
-### Static graph schema publication recovery (Unreleased)
+<a id="static-graph-schema-publication-recovery-unreleased"></a>
+
+### Static graph schema publication recovery (v0.10.0)
 
 The Python LangGraph worker caches its loaded static graphs' real schemas once.
 Its existing startup PUT remains, while a separate bounded task repeats
@@ -517,7 +521,7 @@ The separate v0.8.0 combined fixture already exercises two real Postgres/Redis
 planes, HTTP/gRPC and gateway TLS, installed-parent identity, reclaim/receipt
 replay, cancellation, partial usage and bounded failover cycles. Its historical
 hosted pass is recorded in the [combined qualification](internal/constrained-execution.md#hosted-linux-evidence-november-15-2026).
-Unreleased source hardens fixture environment isolation, structured acceptance
+v0.10.0 hardens fixture environment isolation, structured acceptance
 and worker-cancellation absence observations before final cleanup. That candidate
 needs its own measured receipts; a prior pass or zero process exit is not new
 qualification. Neither path supplies production gateway HA, continuous PKI
@@ -527,7 +531,7 @@ Follow the [example](../examples/isolated_agent/README.md),
 [operator rollout](ops-runbook.md#security-completion-upgrade). Published v0.6.1
 runner packages do not contain this new profile.
 
-The Unreleased checkout adds an optional effective-policy comparison to the
+The v0.10.0 source qualifier adds an optional effective-policy comparison to the
 disposable qualifier, not to production runner execution. Pass an explicit
 OpenShell 0.1.8 prover path to capture matching current/loaded sandbox policy
 around fixture exec and compare it with the configured boundary. A baseline

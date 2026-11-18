@@ -2,7 +2,7 @@
 
 This runnable server keeps its Vercel AI SDK request loop and application state. Runkite decides whether its `createNote` tool is allowed. The note is a local application object, so the example performs no external write. In the normal provider mode, the model is called only when you submit a new turn.
 
-For a **checkout walkthrough without a model account** (v0.9.0 source), follow
+For a **checkout walkthrough without a model account** (introduced with v0.9.0 source), follow
 [proposal, tenant review and one local note](DEMO.md). The explicit
 `RUNKITE_DEMO_MODEL=scripted` mode uses the pinned SDK's public mock-model API to
 propose a fixed note, while the real plane still handles policy, approval and

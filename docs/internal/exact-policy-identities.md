@@ -1,6 +1,6 @@
 # Exact positive policy identities
 
-Status: Unreleased, source checkout only. Published v0.9.0 predates this change.
+Status: implemented in v0.10.0. Published v0.9.0 predates this change.
 
 ## Boundary and source proof
 

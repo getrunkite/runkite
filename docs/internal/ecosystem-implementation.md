@@ -1,8 +1,9 @@
 # Ecosystem implementation and release gates
 
-Status: active development after published v0.9.0. Changes below are Unreleased
-until a later coordinated release explicitly lists them. Published tags and
-packages remain immutable. No version number is selected by this plan.
+Status: the selected bounded implementation program is included in v0.10.0.
+Runtime features and checkout-only examples retain their separate installation
+and qualification contracts. Published tags and packages remain immutable; the
+release procedure records actual artifact publication separately.
 
 The [public-project survey](ecosystem-review-20261116.md) identifies ideas worth
 adapting, existing Runkite contracts and rejected duplication. This document
@@ -47,9 +48,9 @@ that its runtime has been integrated or that all its features belong here.
 
 Each slice carries implementation, meaningful regression tests, an engineering
 note and operator/developer guidance. Admin changes rebuild the embedded bundle.
-Public REST changes update the generator and checked-in OpenAPI output. Source
-features are labelled Unreleased on support pages. Existing v0.9.0 installation
-and package labels remain accurate.
+Public REST changes update the generator and checked-in OpenAPI output. Support
+pages distinguish v0.10.0 runtime features from source examples. Later source
+changes remain Unreleased until their own coordinated publication.
 
 ## Qualification and publication
 
@@ -66,7 +67,9 @@ Check the built Admin, static support links, engineering navigation, release
 availability labels and package/artifact contents. The later release will list
 only what was actually qualified. No finite suite proves absence of all bugs.
 
-## Next authorized slices, in order
+<a id="next-authorized-slices-in-order"></a>
+
+## Follow-on slices included in v0.10.0
 
 1. **Static graph schema recovery: merged and qualified.**
    Reuse cached Python static LangGraph reports and add atomic bootstrap-only
@@ -75,7 +78,8 @@ only what was actually qualified. No finite suite proves absence of all bugs.
    [engineering contract](schema-publication-recovery.md) records the local
    real-worker and storage qualification. [PR #87](https://github.com/getrunkite/runkite/pull/87)
    merged as `f738af4f0b5af60f09e2d249fbd72d0795cb30b2` after all 16 hosted
-   checks passed. This remains Unreleased source, not a new published artifact.
+   checks passed. Its runtime changes are included in v0.10.0; that slice's
+   earlier qualification does not qualify later source changes.
 2. **Optional tools-only connector profiles: implemented.**
    The [connector profile](tools-only-connectors.md) adds an opt-in inbound method
    allowlist and narrowed initialize capabilities to the existing proxy, with
@@ -92,8 +96,9 @@ only what was actually qualified. No finite suite proves absence of all bugs.
    Preview is not a per-fire receipt ledger. Check the matching implementation
    PR's hosted results for the exact qualification state.
 
-These are current-source work items, not additions to published v0.9.0 artifacts
-or evidence that the three implementations and release gates are complete.
+These implementations are included in v0.10.0 and do not change published
+v0.9.0 artifacts. Implementation status does not establish publication or
+complete every release gate.
 Track the later slices' current public checks independently; the first slice's
 merged qualification does not qualify the rest of this worktree or a release.
 
@@ -109,12 +114,12 @@ exporter/run-span/LangChain callback helpers, with no plane dispatch, framework
 worker or model call. Its [reproducible qualifier](../../examples/langfuse_otlp/README.md)
 and sanitized receipt keep that boundary distinct from a full managed-run or HA
 qualification. The new workflow covers wire/offline checks only. This adds no
-exporter, model wrapper or embedded backend, and does not change v0.9.0
-availability labels.
+exporter, model wrapper or embedded backend. The recipe remains a checkout
+asset; it does not change the earlier exporters' release history.
 
 ## Follow-on qualification: OpenShell effective policy
 
-The Unreleased [effective-policy fixture](openshell-effective-policy.md) reuses
+The v0.10.0 checkout [effective-policy fixture](openshell-effective-policy.md) reuses
 the existing external OpenShell 0.1.8 JSONL workload and adds an optional
 qualification-only checker. It captures current/loaded sandbox policy before
 exec and after probes, compares the observed policy with the original boundary

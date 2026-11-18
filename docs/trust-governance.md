@@ -159,7 +159,7 @@ provider-verified bills or a hard ceiling against dishonest/unreported calls.
 Existing native SDK usage reporting is separate. Keep external provider
 accounting and limits.
 
-The Unreleased [effective-policy qualification](internal/openshell-effective-policy.md)
+The v0.10.0 checkout [effective-policy qualification](internal/openshell-effective-policy.md)
 observes matching current/loaded gateway configuration around fixture execution
 and compares it under the pinned OpenShell 0.1.8 checker's model. It changes no
 production gate and does not turn snapshot equality into atomic exec binding,
@@ -259,7 +259,7 @@ When `langgraph.json` has a `policy` section (including empty `"policy": {}`), c
 | `POST .../mcp` | `X-Runkite-Connector-Session` must match that token for `(tenant_id, agent_id, run_id, generation, connector)` (15m absolute TTL) |
 | `POST .../mcp` `tools/call` | Same grant + optional per-grant tool allow/deny + argument digest / config predicates |
 
-**Unreleased exact positive identities, source checkout only:** published v0.9.0
+**Exact positive identities (v0.10.0):** published v0.9.0
 predates this evaluator update. A grant's tenant, agent and connector scope must
 match the exact stored/request identity, and a tool allow entry must match the
 exact wire tool name. Baseline/SQL grant overlay keys are exact tuples. App-owned

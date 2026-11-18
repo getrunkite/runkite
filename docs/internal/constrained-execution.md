@@ -179,7 +179,9 @@ The checked CLI reports `openshell 0.1.8`; its release archive was verified agai
 the official SHA-256 manifest. That checksum check alone does not establish
 gateway enforcement. Actual runtime qualification is recorded below.
 
-### Current-source effective-policy qualification (Unreleased)
+<a id="current-source-effective-policy-qualification-unreleased"></a>
+
+### Current-source effective-policy qualification (v0.10.0)
 
 The optional `--prover` path in `scripts/qualify-isolated.py` now observes the
 gateway's complete effective policy and its exact loaded revision before
@@ -365,7 +367,9 @@ before making that claim.
 Neither a bounded fixture nor a verified reporter proves provider billing,
 continuous certificate rotation, indefinite soak or arbitrary SDK containment.
 
-### RFE #47 current-source qualification hardening (Unreleased)
+<a id="rfe-47-current-source-qualification-hardening-unreleased"></a>
+
+### RFE #47 current-source qualification hardening (v0.10.0)
 
 The existing combined fixture and its historical hosted pass below already
 establish the bounded composition requested by

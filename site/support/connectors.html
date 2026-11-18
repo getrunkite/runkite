@@ -284,7 +284,7 @@ const reply = await proxyConnectorMcp(config, "salesforce", {
           <code>tools/call</code> arguments, when present, must be a JSON object;
           a string containing encoded JSON is not a substitute.
         </p>
-        <h2 id="tools-only">Tools-only MCP profile (Unreleased)</h2>
+        <h2 id="tools-only">Tools-only MCP profile (v0.10.0)</h2>
         <p>If a connector's upstream server exposes resources, prompts or other methods that its caller does not need, opt in with <code>mcp.tools_only: true</code>. Omitted or false keeps the existing contract. The profile works with both JSON and negotiated Streamable HTTP; existing tool filters, grants, argument policy and HITL remain in force.</p>
         <pre class="mono-block">mcp:
   url: https://files-mcp.example/mcp

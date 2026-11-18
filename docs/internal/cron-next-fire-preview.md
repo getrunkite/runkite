@@ -1,6 +1,6 @@
 # Preview the next cron calendar boundary
 
-Status: Unreleased current source after v0.9.0. This adds an optional Admin
+Status: implemented in v0.10.0. This adds an optional Admin
 projection and read-only UI guidance. It adds no fire ledger, dispatch API,
 schedule mutation, database migration or new scheduler service.
 

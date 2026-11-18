@@ -1,6 +1,6 @@
 # promptfoo managed-run provider engineering note
 
-Status: Unreleased example in current source. Do not attribute this integration to published Runkite 0.9.0 or advertise native runtime/embedding support. Code is under [examples/promptfoo](../../examples/promptfoo/README.md). No core dispatch, permission or API semantics change.
+Status: checkout-only example included with v0.10.0 source. It adds no native runtime or embedding support. Code is under [examples/promptfoo](../../examples/promptfoo/README.md). No core dispatch, permission or API semantics change.
 
 ## Pinned caller contract
 

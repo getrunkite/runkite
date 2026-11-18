@@ -81,7 +81,7 @@
         <h1>Feature map</h1>
         <p class="lede">Every Admin surface and the handbook page that explains it, so empty states and reviews never strand you.</p>
 
-        <p class="note"><strong>Verified release: v0.9.0.</strong> The operator improvements below require v0.9.0 or matching source. The Trinity specialist and scripted governance walkthroughs remain checkout examples, separate from the published packages.</p>
+        <p class="note"><strong>Verified release: v0.10.0.</strong> Deploy matching v0.10.0 planes and runners. This release requires a <a href="ops.html#assignment-identity-upgrade">coordinated drain and SQL upgrade</a>. Earlier operator improvements remain available. The Trinity specialist and scripted governance walkthroughs remain checkout examples, separate from the published packages.</p>
 
         <div class="table-wrap">
           <table class="matrix">
@@ -123,11 +123,11 @@
           </table>
         </div>
 
-        <h2 id="current-source">Current source (Unreleased)</h2>
-        <p class="note">These additions require their matching integrated checkout. Published v0.9.0 packages retain the released contract above. Start with the <a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md#unreleased-current-source">source integration guide</a>; contributors should follow the <a href="engineering.html#current-source">engineering and qualification map</a>.</p>
+        <h2 id="current-source">v0.10.0 features and examples</h2>
+        <p class="note">Runtime additions below ship in v0.10.0. Integration applications, recipes and qualification scripts remain source checkout assets, separate from the published packages. Start with the <a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md#unreleased-current-source">source integration guide</a>; contributors should follow the <a href="engineering.html#current-source">engineering and qualification map</a>.</p>
         <div class="table-wrap">
           <table class="matrix">
-            <thead><tr><th>Source addition</th><th>Guide</th><th>Boundary</th></tr></thead>
+            <thead><tr><th>v0.10.0 addition</th><th>Guide</th><th>Boundary</th></tr></thead>
             <tbody>
               <tr><td>Assignment identity protocol 1</td><td><a href="runner-auth.html#assignment-identity">Worker identity and coordinated upgrade</a></td><td>Exact run/record/generation echoes, record-scoped events/cancellation and atomic finalization fences. Backups, drained writers, matching builds and Postgres/SQLite migration 23 or MySQL migration 24 are required. Legacy unbound accounting, hook claims and same-ID receipts need explicit reconciliation. Kafka needs explicit non-atomic opt-in even with Redis.</td></tr>
               <tr><td>Structured MCP input discovery</td><td><a href="protocol.html#structured-input-discovery">Protocol guide</a></td><td>Advisory nested input schema, generic fallback, unknown freshness and a session snapshot. Raw invocation is unchanged.</td></tr>
@@ -147,7 +147,7 @@
             </tbody>
           </table>
         </div>
-        <p>Read the <a href="limitations.html#current-source-limits">current-source limits</a> before combining these paths. An interoperability test is not upstream endorsement, business-effect idempotency or a new runtime.</p>
+        <p>Read the <a href="limitations.html#current-source-limits">release limits</a> before combining these paths. An interoperability test is not upstream endorsement, business-effect idempotency or a new runtime.</p>
 
         <h2>Integration entry points</h2>
         <ul class="links">

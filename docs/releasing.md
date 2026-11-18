@@ -9,38 +9,43 @@ Framework compatibility pins such as `ai@7.0.155` are separate tested contracts.
 Release availability labels still need review on every feature release; a badge
 cannot make a checkout-only adapter part of an older registry artifact.
 
-## v0.10.0 candidate (unpublished)
+<a id="v0100-candidate-unpublished"></a>
 
-The prepared next minor is 0.10.0 because assignment identity protocol 1 and
-record-bound SQL finalization require a coordinated upgrade. Version metadata
-identifies the candidate; no tag, registry version, image or release is established
-by that preparation. Published v0.9.0 remains the verified release below.
+## v0.10.0 release verification
 
-Use the [candidate checklist](internal/release-candidate-v0100.md) before tagging.
-The [merged-main qualification](internal/release-candidate-v0100.md#merged-main-qualification-november-18-2026)
-records successful hosted and local checks at `7a7ae07`, including three-cycle
-combined HA, fresh archives/packages and both image platforms. Image CPU execution
-and publishing-configuration limits are explicit. Actual registry uploads,
-published image indexes and final tagged downloads still need verification.
-The upgrade requires stopped writers, restorable backups, Postgres/SQLite
-migration 23 or MySQL migration 24, matching planes/runners/custom integrations,
-and explicit reconciliation of legacy accounting, hook claims and receipts.
-There is no automatic downgrade or missing-proof compatibility path. Managed
-policy reviews and app-owned continuations have different invalidation contracts;
-follow the linked operator instructions before restoring callers.
+v0.10.0 is the coordinated release for the control-plane binaries, four registry
+packages and three image repositories. The
+[publication record](internal/release-verification-v0100.md) binds the immutable
+source, actual tagged downloads, installed-package checks, six image variants
+and the authentication path exercised by each publisher. Keep source
+qualification separate from actual publication evidence.
 
-The version-scoped notice in [the GoReleaser header](../.goreleaser.yaml) places
-the 0.10.0 coordinated-upgrade warning in the generated GitHub release body.
-Keep it with the download/install instructions; an automatic commit changelog
-alone is insufficient upgrade guidance. Validate the rendered notice before
-publication, and keep the historical v0.9.0 verification unchanged.
+This release requires a maintenance window. Back up database, queue and native
+receipts, stop submissions/cron dispatch, drain assignments and stop every
+writer. Apply Postgres/SQLite migration 23 or MySQL migration 24, then deploy
+matching protocol-1 planes, runners and custom integrations. Reconcile legacy
+unbound accounting, bare terminal-hook claims and ambiguous same-ID receipts
+before traffic resumes. Kafka requires explicit non-atomic compatibility opt-in,
+even with Redis. Automatic downgrade is refused; rollback requires a reviewed
+backup restore and accounting reconciliation. Follow the complete
+[upgrade sequence](internal/release-candidate-v0100.md#upgrade-sequence) and
+[operator runbook](ops-runbook.md#assignment-identity-upgrade).
 
-Package READMEs describe the 0.10.0 matching-version contract without claiming
-registry publication. Build final packages from the selected release source,
-including those README bytes. Keep website release badges and
-published availability labels at v0.9.0 until every advertised destination is
-verified. Examples that remain checkout assets must retain that distinction
-after a release; a new runner wheel or npm tarball does not install them.
+Runtime additions include scoped specialist discovery/observation, advisory
+input/profile metadata, registry preservation, cron visibility/preview and
+offline policy fixtures. The
+[integration guide](integrations.md#unreleased-current-source) identifies their
+contracts. Langflow, promptfoo, AG-UI and OpenShell applications, recipes and
+qualification scripts remain checkout assets. A runner wheel or npm tarball
+does not install those applications. CrewAI, LlamaIndex, AutoGen and plain
+LangChain adapters retain their checkout-only installation boundary.
+
+The [candidate record](internal/release-candidate-v0100.md) preserves earlier
+source, hosted HA and local artifact evidence with its exact measured limits.
+The [GoReleaser header](../.goreleaser.yaml) places the version-scoped coordinated
+upgrade warning before downloads in the actual GitHub release body. Keep it
+with the installation instructions. Preserve the historical v0.9.0 record below
+and never replace earlier immutable release artifacts.
 
 <a id="v090-candidate-unreleased"></a>
 
@@ -245,8 +250,12 @@ returns a package-keyed object while the original checker expected an array.
 The corrected controller accepts the supported JSON shapes and retains the
 same immutable package-source checks.
 
-PyPI post-upload visibility checks now wait up to 300 seconds for explicit
+PyPI post-upload visibility checks wait up to 300 seconds for explicit
 metadata absence or missing files, while asking intermediaries to revalidate.
+The post-v0.10.0 controller uses the same bound for npm: that release's npm
+governance upload succeeded through Trusted Publishing, but its original
+30-second public check expired before registry visibility converged. Do not
+upload the same version again to work around a cached absence.
 Authentication/network errors, malformed responses and content mismatches still
 fail immediately. The longer bound does not turn a successful upload response
 into proof of public availability. Inspect every recovery job and its retained

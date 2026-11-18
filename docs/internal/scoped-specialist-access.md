@@ -1,6 +1,6 @@
 # Scoped specialist caller access
 
-Status: Unreleased, source checkout only. Published v0.9.0 has stable incoming
+Status: implemented in v0.10.0. Published v0.9.0 has stable incoming
 MCP run IDs but does not include this permission/reference contract. No release
 version or install label changes as part of this feature.
 

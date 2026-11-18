@@ -1,6 +1,6 @@
 # Advisory structured input discovery over MCP
 
-Status: Unreleased, current source only. Published v0.9.0 keeps the generic MCP
+Status: implemented in v0.10.0. Published v0.9.0 keeps the generic MCP
 input schema. This change enriches discovery without changing execution,
 permissions, retry identity, storage migrations or the Runner Protocol.
 
@@ -17,7 +17,7 @@ may retain stubs. A separately supplied report is not evidence that a particular
 worker has loaded matching code. `AgentSchema` still has no reporter revision,
 report time or deployment binding. This feature does not invent that provenance.
 
-The Unreleased [static graph publication recovery](schema-publication-recovery.md)
+The v0.10.0 [static graph publication recovery](schema-publication-recovery.md)
 caches Python static reports once and uses a separate periodic endpoint to fill
 only existing exact four-field bootstrap rows after a reset or failed report.
 It does not replace useful/partial reports, introspect factories or other SDKs,

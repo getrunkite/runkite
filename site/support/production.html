@@ -79,7 +79,7 @@
 
         <p class="kicker">Build</p>
         <h1>Production day-0</h1>
-        <p class="note"><strong>Unreleased source builds:</strong> deploy matching planes, runners and custom stores for <a href="runner-auth.html#assignment-identity">assignment identity protocol 1</a>. Back up and drain all writers, then apply Postgres/SQLite migration 23 or MySQL migration 24 before traffic resumes. Legacy unbound accounting, bare hook claims and same-ID receipts require explicit reconciliation, with fresh operation IDs for intentional new work. Kafka requires explicit non-atomic compatibility opt-in even when Redis is present. Published v0.9.0 artifacts retain their released contract.</p>
+        <p class="note"><strong>v0.10.0 upgrade:</strong> deploy matching planes, runners and custom stores for <a href="runner-auth.html#assignment-identity">assignment identity protocol 1</a>. Back up and drain all writers, then apply Postgres/SQLite migration 23 or MySQL migration 24 before traffic resumes. Legacy unbound accounting, bare hook claims and same-ID receipts require explicit reconciliation, with fresh operation IDs for intentional new work. Kafka requires explicit non-atomic compatibility opt-in even when Redis is present. Older artifacts retain their released contract. Follow the coordinated upgrade for v0.10.0.</p>
         <p class="lede">The Supported honesty bar is not “compose came up.” It is Postgres + Redis, real client auth, runner tokens, and an Admin credential that includes <code>admin</code>.</p>
 
         <div class="guide-grid">

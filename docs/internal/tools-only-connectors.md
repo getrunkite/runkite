@@ -1,6 +1,6 @@
 # An optional tools-only surface for connector MCP
 
-Status: Unreleased source after v0.9.0. This is an opt-in restriction on the
+Status: implemented in v0.10.0. This is an opt-in restriction on the
 existing run-bound connector proxy. It adds no MCP server, credential store,
 policy engine, transport, Runner Protocol message or database migration.
 

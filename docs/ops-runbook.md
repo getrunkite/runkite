@@ -2,9 +2,9 @@
 
 The **Supported** production profile uses **Postgres + Redis**, client auth and runner tokens. The linked guides explain the architecture and individual controls.
 
-**v0.9.0 deployment:** use matching plane and runner artifacts. The chart's
+**v0.10.0 deployment:** use matching plane and runner artifacts. The chart's
 `image.tag` and `runner.image.tag` default to mutable `latest`; explicitly set
-both to `0.9.0` for this upgrade, or select matching images built from the same
+both to `0.10.0` for this upgrade, or select matching images built from the same
 source. Do not combine new configuration or schema changes with older released
 writers. See [release verification](releasing.md).
 
@@ -63,7 +63,9 @@ or approval migrations by editing tables or migration stamps. See the
 [MCP contract](mcp-server.md#stable-operation-ids-unreleased-planned-v090) and
 [release verification](releasing.md#v090-candidate-unreleased).
 
-## Enqueue acknowledgement failures (Unreleased)
+<a id="enqueue-acknowledgement-failures-unreleased"></a>
+
+## Enqueue acknowledgement failures (v0.10.0)
 
 A delivery error can follow queue acceptance. Before creating replacement work,
 inspect the original run through REST or Admin and preserve its exact tenant and
@@ -104,9 +106,11 @@ can release a claim after acknowledgement loss. No fire-to-run receipt table,
 automatic replay of uncertain work or cross-system transaction is added. See
 the [cron retry contract](internal/cron-run-visibility.md#acknowledgement-loss-and-fire-claims-unreleased).
 
-## Static graph schema publication recovery (Unreleased)
+<a id="static-graph-schema-publication-recovery-unreleased"></a>
 
-This checkout adds automatic recovery for the default-tenant static Python
+## Static graph schema publication recovery (v0.10.0)
+
+v0.10.0 adds automatic recovery for the default-tenant static Python
 LangGraph reports already produced at startup. A plane registration can reset
 stored schemas to bootstrap stubs; a matching newer worker retains its captured
 schema bytes and runs bounded recovery independently of job polling. There is
@@ -134,7 +138,9 @@ Schema definitions can contain sensitive defaults, examples and descriptions.
 Share only redacted diagnostics, not schema dumps, credentials or upstream error
 bodies. See the [exact algorithm and recovery procedure](internal/schema-publication-recovery.md).
 
-## Cron tenant thread routing (Unreleased)
+<a id="cron-tenant-thread-routing-unreleased"></a>
+
+## Cron tenant thread routing (v0.10.0)
 
 The source dispatch path and Admin history share tenant-aware thread selection.
 Default schedules keep `cron:<name>`. A named tenant prefers its canonical
@@ -165,7 +171,9 @@ that retain a global schedule-name primary key need separate schema assessment
 before claiming same-name schedule support. Do not edit migration stamps to
 remove that constraint. See the [selection and continuity contract](internal/cron-run-visibility.md#named-tenant-thread-routing-unreleased).
 
-## Cron calendar preview (Unreleased)
+<a id="cron-calendar-preview-unreleased"></a>
+
+## Cron calendar preview (v0.10.0)
 
 Admin Cron can request `include_preview=true` independently of retained history.
 The preview-only API adds no thread/run/claim reads. A single UTC computation
@@ -199,7 +207,9 @@ same thread. Neither projection is a skip ledger or exactly-once proof. See
 the [preview engineering note](internal/cron-next-fire-preview.md) and
 [public guide](../site/support/cron.html#next-fire-preview).
 
-## Tools-only connector rollout (Unreleased)
+<a id="tools-only-connector-rollout-unreleased"></a>
+
+## Tools-only connector rollout (v0.10.0)
 
 For callers that require only tools, the new optional `mcp.tools_only: true`
 restricts inbound connector MCP methods. It works with both existing transports
@@ -392,12 +402,14 @@ mismatch explicitly.
 
 <a id="assignment-identity-upgrade"></a>
 
-## Assignment identity upgrade (Unreleased)
+<a id="assignment-identity-upgrade-unreleased"></a>
 
-Current source requires assignment identity protocol 1 across every plane and
+## Assignment identity upgrade (v0.10.0)
+
+v0.10.0 requires assignment identity protocol 1 across every plane and
 runner. This is a coordinated upgrade, not a mixed-version rolling compatibility
-promise. Published v0.9.0 images, wheels and npm packages retain their release
-contract; build and pin matching source artifacts until a coordinated release.
+promise. Deploy matching v0.10.0 images, wheels and npm packages. Older released
+artifacts retain their earlier contract and cannot be mixed into this upgrade.
 
 1. Stop new submissions and schedule dispatch, then drain workers and queued or
    inflight assignments under the existing cancellation/reconciliation procedure.
@@ -934,7 +946,7 @@ The three-cycle hosted pass on revision `96051cc` is historical evidence for
 that combined path, not a result for every later source revision. See the
 [actual hosted record](internal/constrained-execution.md#hosted-linux-evidence-november-15-2026).
 
-For the Unreleased RFE #47 hardening, use the prepared exact candidate binary,
+For the v0.10.0 RFE #47 fixture, use the prepared exact candidate binary,
 runner wheel and checksum-verified CLI with the existing wrapper. Child
 processes use a deliberate fixture environment rather than inheriting ambient
 OTLP exporters or provider settings. Shared local/hosted evidence validation,
@@ -953,7 +965,9 @@ other lifecycle cases run once, and gateway outage probes occur after the child
 test. Record measured duration and faults instead of calling every repeat a
 production soak. See the [RFE #47 scope and current-candidate requirements](internal/constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased).
 
-### Effective-policy fixture inspection (Unreleased)
+<a id="effective-policy-fixture-inspection-unreleased"></a>
+
+### Effective-policy fixture inspection (v0.10.0)
 
 For the experimental isolated profile, the checkout qualifier accepts
 `--prover /absolute/path/to/openshell-prover`. Use the checksum-verified official
@@ -990,9 +1004,12 @@ configuration error before polling. HTTPS URLs with matching IP SANs are still
 supported. See the [runner requirements](runners.md).
 
 
-## Unreleased policy identity upgrade
+<a id="unreleased-policy-identity-upgrade"></a>
 
-This source-checkout evaluator update is not included in published v0.9.0.
+## Policy identity upgrade (v0.10.0)
+
+The v0.10.0 evaluator changes positive identity matching; published v0.9.0
+retains its earlier evaluator contract.
 Positive grants now match exact tenant, agent and connector identities, and tool
 allow lists use exact wire names. Configure the bytes actually stored or sent;
 outer whitespace no longer borrows a different identity's grant. SQL grant
