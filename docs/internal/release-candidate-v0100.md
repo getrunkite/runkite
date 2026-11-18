@@ -480,6 +480,8 @@ only. The results above remain attached to `7a7ae07`. Build final artifacts from
 the selected tag, including its README bytes and actual source stamp; do not
 publish or relabel these local snapshot artifacts as that later tagged build.
 
+<a id="remaining-candidate-and-publication-gates"></a>
+
 ## Candidate and publication gates
 
 - [x] Merge the reviewed runtime source and pass its hosted checks at `7a7ae07`,
