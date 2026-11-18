@@ -289,6 +289,25 @@ under `outputs/runkite-pr93-governance-fixture-20261118/`. The hosted run's othe
 failed. A fresh complete hosted suite is required before activating the
 conditional exception; the failed run cannot supply its qualification receipt.
 
+### Hosted ADK tracing fixture follow-up, November 18, 2026
+
+The [next hosted full-suite job](https://github.com/getrunkite/runkite/actions/runs/44260049027/job/134650899585)
+at `bfd7b0e` passed all backend tests, the separate Postgres governance smoke and
+the shared Python runner tests. The isolated SDK stage then exposed an embedded
+Python fixture in `test_native_sdk_spans_are_recorded_without_prompt_tool_or_output_content`:
+its run context and assignment omitted the now-required original-record proof.
+The identity guard rejected that setup before its tracing assertions executed.
+
+Both fixture bindings now use the same explicit identity. The production
+adapter and identity checks are unchanged. A local red/green reproduction,
+the six provider tests and all 69 ADK tests passed with pinned Google ADK 2.13.0;
+two tests retain their explicit native end-to-end prerequisites. The tracing
+test still checks native spans while rejecting prompt, tool and output content.
+Evidence is retained under
+`outputs/runkite-pr93-ci-isolation-20261118/adk-tracing-fixture/`. This failed
+hosted run cannot qualify the conditional Admin exception either. Later hosted
+SDK and end-to-end stages still require a complete successful run.
+
 ### Guard implementation and activation procedure
 
 The trusted record is [scripts/admin-audit-exception.json](../../scripts/admin-audit-exception.json).

@@ -108,6 +108,8 @@ and preserve the existing tenant, TLS, checkpoint and review prerequisites.
   original-record proof instead of borrowing from the durable store. Run the
   binding check without a Postgres prerequisite too, with missing/stale record
   and generation controls. Production identity fences remain unchanged.
+  Supply the same original-record proof to the embedded ADK tracing fixture's
+  run context and assignment so its content-privacy assertions execute.
 
 - Separate Admin dependency auditing from the full CI suite while preserving
   `test` as a blocking summary of both jobs. An audit finding no longer prevents
