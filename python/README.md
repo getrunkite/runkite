@@ -11,7 +11,9 @@ so clients see live SSE / WebSocket progress in the Admin UI.
 The default CLI runs LangGraph. The optional Microsoft Agent Framework profile
 first shipped in the PyPI `0.6.1` wheel via the `agent-framework` extra.
 
-## Assignment identity (0.10.0 source contract)
+<a id="assignment-identity-0100-source-contract"></a>
+
+## Assignment identity (0.10.0 package contract)
 
 Matching 0.10.0 planes and runners
 negotiate record-aware dispatch. Every job must contain its exact original
@@ -23,12 +25,12 @@ upgrade, including Postgres/SQLite migration 23 or MySQL migration 24. Do not fi
 an old assignment from a current run row. See the
 [upgrade procedure](https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#assignment-identity-upgrade).
 
-This describes the 0.10.0 source/package contract, not registry publication.
-Published 0.9.0 packages do not implement it. Until matching artifacts are
-published and verified, build the plane from the same checkout and install this
-runner from the repository root with `python -m pip install ./python` (or a
-matching locally built wheel). The unpinned registry commands below select the
-available published package; they do not establish that it matches this source.
+Use matching plane and runner release versions. Version 0.9.0 packages do not
+implement this contract. For source development, build the plane from the same
+checkout and install this runner from the repository root with
+`python -m pip install ./python` (or a matching locally built wheel). The unpinned
+registry commands below select the available published package; check its version
+against the plane before upgrading.
 
 ```text
   Client / SDK ──HTTP/SSE──► Runkite control plane (Go)

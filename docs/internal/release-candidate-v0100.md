@@ -1,7 +1,8 @@
 # v0.10.0 release candidate
 
-Status: prepared locally, unpublished. The selected version is 0.10.0 because
-the Runner Protocol and SQL accounting changes require a coordinated upgrade.
+Status: merged runtime qualified at `7a7ae07`, release unpublished. The selected
+version is 0.10.0 because the Runner Protocol and SQL accounting changes require
+a coordinated upgrade.
 Version metadata is not publication evidence. Published v0.9.0 remains the
 verified baseline in [the release procedure](../releasing.md).
 
@@ -368,28 +369,136 @@ do not establish successful hosted qualification or activate the checked-in
 record. Local guard evidence is retained under
 `outputs/runkite-pr93-ci-isolation-20261118/`.
 
+## Merged-main qualification, November 18, 2026
+
+[PR #93](https://github.com/getrunkite/runkite/pull/93) merged as
+`7a7ae079475a20da0d2fe20c9e7153be2f688d36`, tree
+`7bbfbcbe4631e7d58281e3be2d6efc6037040be7`. The following fresh results identify
+that exact source and version 0.10.0. They do not relabel the older local
+archives, images or receipts above. Evidence is retained under
+`outputs/runkite-release-v0100-qualification-20261118/`.
+
+### Hosted source and integration checks
+
+- [Main CI](https://github.com/getrunkite/runkite/actions/runs/44273439083)
+  passed all 11 jobs, including the full suite, three image checks and both
+  packaged mTLS Node profiles. Separate
+  [identity race checks](https://github.com/getrunkite/runkite/actions/runs/44273439036)
+  passed too. The Admin audit still retains
+  five HIGH findings under the qualified exception above, expiring November 25
+  at 00:00 UTC. Its green result does not mean the vulnerability is fixed.
+- [Langflow](https://github.com/getrunkite/runkite/actions/runs/44273439025)
+  passed its baseline and scoped native MCP caller profiles.
+  [promptfoo](https://github.com/getrunkite/runkite/actions/runs/44273439081)
+  passed both native CLI/provider profiles. Downloaded receipt archives match
+  GitHub's SHA256 digests and the exact run, attempt, job and source records.
+  These checks use scripted agents, not live model providers or visual editors.
+- [AG-UI](https://github.com/getrunkite/runkite/actions/runs/44273439156)
+  passed 116 shared bridge tests, 25 AG-UI unit tests and 11 native tests, with
+  zero skips. A separate seeded macOS arm64 run passed 12 native tests, including
+  Unicode run IDs and named-tenant isolation in the shared managed-run path,
+  plus AG-UI render/replay/detach/Stop. That local run uses built checkout runner
+  files and SQLite/in-process state. Traffic used loopback; the existing CLI
+  listeners bound wildcard addresses. Its owned processes and observed ports
+  closed without forced cleanup. This is not a published npm artifact test.
+- [OpenShell effective policy](https://github.com/getrunkite/runkite/actions/runs/44273439217)
+  passed its observed policy controls, TLS checks and cleanup.
+  The separately dispatched [combined-HA run](https://github.com/getrunkite/runkite/actions/runs/44278453492)
+  passed all nine managed cases and three requested cycles on native Linux
+  amd64, with four cancellation controls, three live-generation controls,
+  packaged TypeScript mTLS checks and confirmed runtime/backend cleanup.
+  The uploaded source receipt names the full merge SHA. Ordinary push/PR runs
+  skip this manual job; their green fixture guards are not equivalent evidence.
+
+The hosted artifact/log validator rechecks the trusted workflow assertions and
+the shared HA evidence validator. Its digest/member records and negative
+controls are under `evidence-helpers/`. This is bounded maintainer qualification,
+not a production soak or independent security assessment.
+
+### Fresh local archives, packages and images
+
+- Four Go snapshot archives were rebuilt with Go 1.26.11 and GoReleaser 2.20.2.
+  Checksums, architecture headers, version/source stamps and legal/README bytes
+  passed. All 19 embedded Admin assets matched in every binary, 76 comparisons.
+  All four actual archive binaries passed version probes: native macOS arm64,
+  installed Rosetta for macOS amd64, and the corresponding Linux candidate
+  images. See `go-artifacts/`; these snapshots are not tagged release assets.
+- The YAML release header was rendered offline with Go's `text/template` for
+  both 0.10.0 and 0.9.0. The 0.10.0 coordinated-upgrade notice precedes downloads,
+  retains the migration/protocol instructions and pins all download/install
+  versions; the older version does not inherit that notice. See `release-header/`.
+  This checks the header, not the complete auto-generated GitHub release body.
+- Both npm tarballs and both PyPI wheel/sdist pairs were rebuilt from an exact
+  source export. All 276 members, including 252 direct source comparisons,
+  passed the artifact audit. Installed contracts passed: Python runner four,
+  Python governance three, npm runner four strict-mTLS cases, and npm governance
+  35 helper plus 20 AI SDK cases. All four public registry preflights report
+  `needs_publish`. This establishes neither upload authority nor availability.
+  See `artifacts/` for exact pinned build tools, manifests and retained logs.
+- All three actual images were built separately for Linux arm64 and amd64 with
+  version/full revision stamps, fresh bases and uncached package upgrade layers.
+  All six passed UID 65532, legal-byte, architecture and version checks. Both
+  Python images executed the native LangGraph echo; both TypeScript images
+  passed the native LangGraph/AI SDK tool, stream and usage fixture offline.
+  Trivy 0.72.0 with a November 18 database passed the existing HIGH/CRITICAL,
+  `--ignore-unfixed`, fail-on-findings gate for all six immutable local images.
+  It does not assess unfixed, LOW or MEDIUM findings. See
+  `images-{arm64,amd64}-attempt1/`. On this engine, Docker's local image ID names
+  a manifest while Trivy reports the config digest. The receipts bind the saved
+  config and uncompressed layers to the inspected image before accepting a scan.
+
+The local engine is arm64 Linux on macOS. Its amd64 images and archive probes
+use cross-architecture userspace emulation; this is not native Ubuntu amd64
+image execution. The separate hosted HA run is native Linux amd64. The local
+runner revision labels are additional candidate-build metadata: the current
+release workflow does not supply those labels on runners. Final GHCR provenance
+must come from actual release job records and registry digests. No local image,
+snapshot archive or package was uploaded during these checks.
+
+### Publishing configuration and final proof
+
+The personal maintainer account `sharanharsoor` owns both npm/PyPI package pairs.
+Authenticated configuration review confirmed the npm runner's existing GitHub
+publisher. With explicit maintainer approval, npm governance now also trusts
+`getrunkite/runkite`, `release.yml`, with no environment restriction and both
+direct/staged publishing permissions. The current workflow uses direct
+`npm publish`. PyPI governance's existing publisher matches the same repository
+and workflow. PyPI runner still uses its existing project-token path.
+
+Configuration, ownership and secret presence cannot prove a fresh upload.
+Neither npm OIDC path was exercised during qualification. PyPI runner's token
+presence was confirmed, but its current validity is unproven; no token values
+were read. Keep the
+[actual v0.9.0 authentication record](release-verification-v090.md#registry-publication-and-authentication)
+unchanged. Actual upload outcomes and immutable public bytes remain mandatory
+release-time evidence. Do not publish dummy versions to manufacture that proof.
+
+The package README preparation accompanying this record changes documentation
+only. The results above remain attached to `7a7ae07`. Build final artifacts from
+the selected tag, including its README bytes and actual source stamp; do not
+publish or relabel these local snapshot artifacts as that later tagged build.
+
 ## Remaining candidate and publication gates
 
-- [ ] Publish the reviewed final source and qualification changes through the
-  approved publication path. Hosted qualification must run on that exact
-  published candidate before tagging.
-- [ ] Qualify the exact assembled candidate in hosted CI, including the pinned
-  OpenShell native-policy check, Langflow baseline and run-only scoped caller,
-  promptfoo baseline and scoped native CLI, and AG-UI native
-  delivery/detach/reattach/Stop workflows. The local passes above do not replace
-  these hosted gates. Retain their separate receipts.
-  Follow the [integrated gates](ecosystem-integration-checklist.md#qualify-the-integrated-contracts)
-  and the explicit manual external-runtime qualification boundary.
-- [ ] Complete Linux amd64 candidate image qualification for all three images.
-  The local arm64 passes do not qualify amd64 or published multi-platform
-  indexes. Verify both actual published variants after release as listed below;
-  archive execution inside an older cached image does not satisfy this gate.
-  Ordinary CI image scans currently use the default `dev` plane build metadata;
-  they do not establish the identity of a version-stamped release image.
-- [ ] Verify each package's genuine publication authority before tagging.
-  Previous matching-existing npm checks did not establish successful npm OIDC;
-  preserve the [actual v0.9.0 authentication record](release-verification-v090.md#registry-publication-and-authentication).
-  Do not publish dummy versions or expose credentials in evidence.
+- [x] Merge the reviewed runtime source and pass its hosted checks at `7a7ae07`,
+  including the separate three-cycle combined-HA qualification and integration
+  receipts above. Follow the
+  [integrated contracts](ecosystem-integration-checklist.md#qualify-the-integrated-contracts).
+- [x] Build and test version-stamped local candidates for all three images on
+  both Linux target architectures, with the explicit emulation boundary above.
+  Ordinary CI's `dev` plane images and older cached execution bases are not this
+  evidence. Actual published image variants still require their own checks.
+- [x] Rebuild and validate the four Go archives and all four registry package
+  projects from the merged source; review each intended publisher configuration
+  under the personal maintainer account. Retain the actual authentication limits.
+- [ ] Finish final-source preparation and pass its required CI before tagging.
+  Verify the documented difference from the qualified runtime source. Keep the
+  rendered coordinated-upgrade notice with the release body, and build final
+  package READMEs from that source. Published availability remains v0.9.0.
+- [ ] Establish actual package upload outcomes in the intended release context.
+  A successful preflight, configured publisher, continued failed step or
+  matching-existing recovery is not fresh OIDC publication proof. Do not expose
+  credentials in evidence or silently rely on an unverified fallback token.
 - [ ] After authorized tagging/publication, inspect the real Release jobs and
   verify four Go archives/checksums, three OpenAPI assets, both npm packages,
   both PyPI wheel/sdist pairs and both runtime platforms of all three image
@@ -404,5 +513,5 @@ record. Local guard evidence is retained under
   keep historical v0.9.0 records unchanged. Check Pages and protocol mirroring
   separately; neither workflow publishes runner packages.
 
-Preparing this checklist does not create a tag, push source, publish a release
-or upload registry artifacts. Those actions remain separate release gates.
+Qualification did not create a v0.10.0 tag, publish a release or upload registry
+artifacts. Those actions remain separate release gates.
