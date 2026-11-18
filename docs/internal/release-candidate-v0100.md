@@ -227,9 +227,10 @@ this CI follow-up remains necessary.
 Sharan Harsoor approved the following terms only after the full hosted CI suite
 passes. The conditional approval was recorded on November 18, 2026 at
 `06:20:46Z`. The policy record remains `pending-full-ci` with no qualification
-receipt: PR #93 has not yet run the new `Full test suite` job. Its earlier
-`race-regressions` result and the other standalone jobs do not satisfy this
-condition. No exception is currently active.
+receipt. The first [hosted full-suite job](https://github.com/getrunkite/runkite/actions/runs/44256456058/job/134639198312)
+at `d76e069` failed its governance run-binding fixture. That failure does not
+satisfy the condition, and neither do the separate race/standalone job results.
+No exception is currently active.
 
 The reviewed terms are:
 
@@ -262,6 +263,31 @@ The reviewed terms are:
   `test` summary still requires the current full suite and audit result on every
   later run; an older receipt never waives current tests. Until this prerequisite
   is satisfied the policy stays inactive and the known finding remains blocking.
+
+### Hosted governance fixture follow-up, November 18, 2026
+
+The first independent full-suite run reached the backend tests and exposed one
+root failure: `TestGovernanceAnnounceBar/phase0_run_binding` returned
+`run_incarnation_mismatch`. The fake in-flight assignment had no incarnation ID,
+while its request obtained a nonempty proof from the unrelated durable-store
+fixture. `bindInternalRun` correctly refused the mismatch. Postgres enabled the
+parent test; this particular middleware check did not use the database.
+
+The fixture now supplies an explicit captured assignment identity and obtains
+its request proof from that assignment. The same check also runs as
+`TestGovernanceRunBindingFixture` without a Postgres prerequisite, including
+missing-record, superseded-record and stale-generation denial controls. The
+existing Postgres phase name and durable audit/HITL checks are preserved.
+Production authentication and generation fences are unchanged.
+
+A local red/green reproduction and the complete three-phase governance smoke
+passed against an owned loopback `pgvector/pgvector:pg16` fixture. All eight
+`TestMiddleware_RunBinding*` functions passed alongside it, including exact
+record, generation-zero and runner-kind ownership checks. Evidence is retained
+under `outputs/runkite-pr93-governance-fixture-20261118/`. The hosted run's other
+38 Go packages passed, but later SDK/E2E steps were skipped after the API package
+failed. A fresh complete hosted suite is required before activating the
+conditional exception; the failed run cannot supply its qualification receipt.
 
 ### Guard implementation and activation procedure
 
