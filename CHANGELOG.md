@@ -104,6 +104,11 @@ and preserve the existing tenant, TLS, checkpoint and review prerequisites.
 
 ### Fixed
 
+- Remove the vulnerable picomatch watcher chain from the pinned promptfoo example
+  by mirroring its upstream Nunjucks/Chokidar resolution. Keep the framework pin,
+  audit thresholds and native baseline/scoped qualification unchanged. This
+  does not resolve the separate Admin build-tool advisory.
+
 - Require assignment identity protocol 1 before workers dequeue work. Matching
   planes and Python/TypeScript runners echo the original record identity on
   bound HTTP and lifecycle RPCs; missing proof cannot inherit a replacement's

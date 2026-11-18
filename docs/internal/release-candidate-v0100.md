@@ -175,6 +175,27 @@ context. Cached Linux images used to execute archive binaries are not candidate
 image qualification. Registry preflight receipts for all four package projects
 report `needs_publish`; they establish neither upload authority nor availability.
 
+## Current upstream audit blocker, November 18, 2026
+
+[PR #93](https://github.com/getrunkite/runkite/pull/93) reached hosted checks.
+The Admin and promptfoo audit steps stopped on
+[GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
+The separate hosted race regressions passed. The promptfoo follow-up removes
+its affected watcher closure and passes a clean local low-threshold audit,
+32 tests and both real-CLI managed-run profiles; see
+[the dependency record](promptfoo-managed-provider.md#watcher-dependency-removal-november-18-2026).
+Its new committed source still needs the hosted gate.
+
+The Admin audit remains blocked: its five propagated high findings originate
+in picomatch used by Vite/tinyglobby. Live registry metadata reports picomatch
+4.0.7 as latest, still within the advisory's affected range, and Vite 8.3.8
+retains it. The advisory lists no fixed version and is not withdrawn. These
+are build/dev dependencies; no corresponding matcher path was identified in
+the shipped static Admin app. That scope does not clear the audit or establish
+a security exception. Keep the gate and release pending until a verified fix,
+qualified dependency removal or separately reviewed risk decision exists.
+The supporting receipts are under `outputs/runkite-pr93-picomatch-20261118/`.
+
 ## Remaining candidate and publication gates
 
 - [ ] Publish the reviewed final source and qualification changes through the

@@ -46,6 +46,19 @@ durable-run reconciliation and tool-authorization hop state. Copy-only edits nor
 existing checks, not new snapshots of the same text. To inspect a production
 bundle locally, use `npm run preview` or serve the rebuilt Go plane.
 
+## Current dependency audit blocker (November 18, 2026)
+
+The Admin build closure still reports five propagated high findings for
+[picomatch GHSA-fc5q-39xc-vjpf](https://github.com/advisories/GHSA-fc5q-39xc-vjpf).
+There is no published patched version on this date; newer Vite still depends on
+an affected release. These packages run in development/build tooling. The Go
+binary serves the resulting static assets without Node.js or Vite.
+
+The CI audit remains a failing gate. A successful local build does not resolve
+it, and upgrading within the affected range does not fix it. See
+[the candidate security and release record](../docs/internal/release-candidate-v0100.md#current-upstream-audit-blocker-november-18-2026)
+for the separate promptfoo remediation and the remaining Admin blocker.
+
 ## Operator semantics
 
 - Threads, Runs and Try agent operate on runner-managed executions. A standalone

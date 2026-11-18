@@ -64,4 +64,35 @@ Keep promptfoo 0.125.1 pinned while qualifying this contract. Its unmodified clo
 - `basic-ftp` 6.2.4 fixes [listing parser CPU growth](https://github.com/advisories/GHSA-c475-qrg2-pj4r), [control character exception](https://github.com/advisories/GHSA-r4jh-29pc-gfqr) and [MLSD inherited handler lookup](https://github.com/advisories/GHSA-5pm8-86m8-9m6r). The path is promptfoo → proxy-agent → pac-proxy-agent → get-uri → basic-ftp. The [6.0 breaking change](https://github.com/patrickjuchli/basic-ftp/blob/v6.2.4/CHANGELOG.md) disables separate FTP transfer hosts by default. The managed provider uses native fetch, fixed HTTPS and no FTP/PAC path.
 - `glob` 14.0.2 fixes [post-abort traversal](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4); `minimatch` 11.0.1 fixes [pattern amplification](https://github.com/advisories/GHSA-g3hv-75wg-m249). The original direct and optional filesystem-MCP paths resolved glob 13/minimatch 10. These major overrides preserve the APIs used by the qualified local CLI path; they do not claim compatibility with every upstream plugin, untrusted pattern or filesystem MCP server.
 
+### Watcher dependency removal, November 18, 2026
+
+The reviewed [picomatch advisory](https://github.com/advisories/GHSA-fc5q-39xc-vjpf)
+now covers every published version through 4.0.7 and lists no fixed release.
+Our old example lock reached picomatch 2.3.2 through Nunjucks 3.2.4's optional
+Chokidar 3 watcher, producing six propagated high findings. Upgrading picomatch
+within that affected range would not resolve it.
+
+Promptfoo 0.125.1 already selects Chokidar 5.0.0 for Nunjucks in
+[its own package overrides](https://github.com/promptfoo/promptfoo/blob/0.125.1/package.json).
+Overrides inside a dependency do not propagate to a consuming project's root.
+The example now mirrors that resolution with `nunjucks: { chokidar: "5.0.0" }`,
+keeping promptfoo and all existing security pins unchanged. The regenerated npm
+10.9.3 lock removes the old watcher closure, including every picomatch copy;
+it introduces no new package artifacts. This removes affected code rather than
+ignoring an advisory or replacing it with an unreviewed fork.
+
+Fresh `npm ci` and `npm audit --audit-level=low` report zero findings at all
+severities on this date. All 32 example tests pass. The actual promptfoo CLI
+passes both baseline and scoped profiles on Node 26.11.0, with four distinct
+managed runs and four reference-pinned waits per profile. Retained local
+receipts are under `outputs/runkite-pr93-picomatch-20261118/`; hosted CI must
+qualify the committed follow-up separately.
+
+The qualified evaluator renders without template watching. Generic Nunjucks
+watcher compatibility is outside this recipe: `NodeResolveLoader({ watch: true })`
+calls Chokidar without paths, which version 5 rejects. This change does not
+qualify arbitrary Nunjucks applications, watch mode or promptfoo's web server.
+The separate Admin Vite build dependency still reaches affected picomatch;
+a clean promptfoo audit does not resolve that release gate.
+
 Use the committed lockfile with `npm ci`; do not use `npm audit fix --force`, silently downgrade promptfoo or assume unused paths justify shipping known findings. Repeat the audit and native qualification when changing this dependency closure. Promptfoo's broad optional ecosystem remains outside this example's feature claim.
