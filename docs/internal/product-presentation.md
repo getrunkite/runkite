@@ -78,6 +78,12 @@ exposes the controls. The tour has no timers, autoplay or remote requests. It
 does not change the original walkthrough or execution animation controllers.
 GitHub Pages still serves the site; there is no new hosting dependency.
 
+The controls use a content-responsive grid rather than three forced columns.
+At narrow widths with enlarged text, they can stack instead of clipping their
+labels. Inline action links also wrap within their cards. A 320 pixel preview
+with doubled root text exposed both problems; both were corrected before
+publication. This text-size fixture is distinct from native browser zoom.
+
 ## A first run should end in a result
 
 The old homepage recipe started a plane and a runner but stopped before a

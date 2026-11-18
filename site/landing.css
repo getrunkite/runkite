@@ -100,7 +100,7 @@ h2 { font: 500 clamp(2.05rem, 3.4vw, 3rem)/1.15 var(--font-display); letter-spac
 .mode-outcomes { display: grid; gap: .5rem; list-style: none; padding: 0; margin: 0; color: #d2d0cc; font-size: .84rem; }
 .mode-outcomes li::before { content: "+"; display: inline-block; margin-right: .65rem; color: var(--accent); font-family: var(--font-mono); }
 .mode-card .mode-boundary { font-size: .76rem; line-height: 1.7; color: #9e9a92; margin: 1.35rem 0 1.5rem; }
-.inline-link { display: inline-flex; gap: 1.7rem; align-items: center; color: var(--accent-2); font-size: .84rem; font-weight: 500; text-decoration: none; }
+.inline-link { display: inline-flex; gap: clamp(.6rem, 2vw, 1.7rem); align-items: center; min-width: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--accent-2); font-size: .84rem; font-weight: 500; text-decoration: none; }
 .inline-link:hover, .inline-link:focus-visible { text-decoration: underline; }
 .integration-note { max-width: 58rem; margin: 1.3rem 0 0; font-size: .78rem; line-height: 1.75; color: #93908b; }
 .operations { border-block: 1px solid #282628; background: #0f0f10; }
@@ -108,8 +108,9 @@ h2 { font: 500 clamp(2.05rem, 3.4vw, 3rem)/1.15 var(--font-display); letter-spac
 .operations .section-heading { max-width: 48rem; margin-bottom: 2rem; }
 .operations .inline-link { margin-top: .8rem; }
 .product-tour { margin-bottom: 2rem; }
-.tour-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin-bottom: 1rem; }
+.tour-controls { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 5rem), 1fr)); gap: .65rem; margin-bottom: 1rem; }
 .tour-controls button { display: flex; align-items: baseline; gap: .75rem; width: 100%; padding: 1.15rem; border: 1px solid #454039; border-radius: 3px; text-align: left; background: #141311; color: var(--ink-dim); font: inherit; cursor: pointer; }
+.tour-controls button > span { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .tour-controls button[aria-selected="true"] { border-color: var(--accent); background: #292014; box-shadow: inset 3px 0 var(--accent); }
 .tour-controls button:hover, .tour-controls button:focus-visible { border-color: var(--accent-2); }
 .tour-number { color: var(--accent-2); font: .7rem var(--font-mono); }
