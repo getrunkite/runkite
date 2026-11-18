@@ -320,7 +320,7 @@ demo is a sandbox.
 | **Start building** | [Quickstart](docs/quickstart.md) · [Client SDK](docs/client-sdk.md) · [Configuration](docs/configuration.md) · [Auth](docs/auth.md) |
 | **Operate agents** | [Admin](docs/admin.md) · [Runners](docs/runners.md) · [Connectors](docs/connectors.md) · [Trust and governance](docs/trust-governance.md) |
 | **Deploy and upgrade** | [Deployment](docs/deployment.md) · [Ops runbook](docs/ops-runbook.md) · [Limitations](docs/limitations.md) |
-| **Understand the design** | [Architecture](docs/architecture.md) · [Engineering notes](docs/internal/architecture-deep-dive.md) · [Runner Protocol](runner-protocol/README.md) |
+| **Understand the design** | [Architecture](docs/architecture.md) · [Engineering notebook](docs/internal/engineering-notebook/README.md) · [Historical walkthrough](docs/internal/architecture-deep-dive.md) · [Runner Protocol](runner-protocol/README.md) |
 
 The [documentation site](https://getrunkite.com/support/) provides guided product
 and integration walkthroughs. Additional reference: [API](docs/api.md),

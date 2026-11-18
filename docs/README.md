@@ -33,9 +33,14 @@ Start with the **[v0.10.0 integration guide](integrations.md#unreleased-current-
 | [Releasing](releasing.md) | Tag → GitHub Release, GHCR, PyPI, npm |
 
 Public HTML walkthroughs live in [site/support](../site/support/), including the
-[SDK integration guide](../site/support/sdk-integration.html). Engineering
-[study notes](internal/architecture-deep-dive.md) include a current-contract
-correction map; the [embedded governance design record](internal/embedded-governance-next-release.md)
+[SDK integration guide](../site/support/sdk-integration.html). Start the
+[engineering notebook](internal/engineering-notebook/README.md) for the connected
+design story through v0.10.0: ownership, recovery, authority, integrations and
+release evidence, with a decision map and self-study prompts. It links actual
+code/tests and distinguishes recorded history from reconstructed rationale.
+The [historical walkthrough](internal/architecture-deep-dive.md) preserves the
+earlier foundation and its current-contract correction map; the
+[embedded governance design record](internal/embedded-governance-next-release.md)
 is historical and points to the implemented API.
 
 The v0.8.0 [identity and distribution milestone](internal/identity-and-distribution-plan.md)
