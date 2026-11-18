@@ -56,7 +56,7 @@ type CompletionResult struct {
 // output, checkpoint, run status and thread release in one durable transaction.
 // Retrying a committed completion is accepted without applying its writes twice.
 type RunCompletionStore interface {
-	BeginRunAttempt(context.Context, string, int64) (bool, error)
+	BeginRunAttempt(context.Context, string, string, int64) (bool, error)
 	CompleteRun(context.Context, *RunCompletion) (CompletionResult, error)
 }
 
@@ -100,6 +100,9 @@ func CheckCompletion(metadata map[string]interface{}, status models.RunStatus, c
 	}
 	if _, exists := metadata[CompletionGenerationKey]; exists {
 		return CompletionResult{Accepted: MetadataGeneration(metadata, CompletionGenerationKey) == c.Generation && status == c.Status}
+	}
+	if c.ReplayOnly {
+		return CompletionResult{}
 	}
 	if TerminalRunStatus(status) {
 		return CompletionResult{}

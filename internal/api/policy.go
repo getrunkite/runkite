@@ -191,8 +191,13 @@ func (s *Server) emitToolAuthEvent(ctx context.Context, in policy.PolicyInput, d
 		slog.Warn("policy: tool_auth marshal failed", "error", err, "run_id", in.RunID)
 		return
 	}
+	binding := auth.RunBindingFromContext(ctx)
+	if binding == nil || binding.RunIncarnationID == "" {
+		return
+	}
+	incarnation := binding.RunIncarnationID
 	seq := int64(1)
-	if prev, replayErr := s.broker.Replay(ctx, in.RunID, 0); replayErr == nil {
+	if prev, replayErr := s.broker.Replay(ctx, in.RunID, incarnation, 0); replayErr == nil {
 		for _, ev := range prev {
 			if ev != nil && ev.Seq >= seq {
 				seq = ev.Seq + 1
@@ -205,15 +210,16 @@ func (s *Server) emitToolAuthEvent(ctx context.Context, in policy.PolicyInput, d
 		return
 	}
 	ev := &transport.RunEvent{
-		Generation: in.Generation,
-		EventID:    in.RunID + "_tool_auth_" + idSuffix,
-		Seq:        seq,
-		Method:     "tool_auth",
-		Namespace:  []string{},
-		Data:       payload,
-		Ts:         time.Now().UnixMilli(),
+		Generation:       in.Generation,
+		RunIncarnationID: incarnation,
+		EventID:          in.RunID + "_tool_auth_" + idSuffix,
+		Seq:              seq,
+		Method:           "tool_auth",
+		Namespace:        []string{},
+		Data:             payload,
+		Ts:               time.Now().UnixMilli(),
 	}
-	if err := s.broker.Publish(ctx, in.RunID, ev); err != nil {
+	if err := s.broker.Publish(ctx, in.RunID, incarnation, ev); err != nil {
 		slog.Warn("policy: tool_auth publish failed", "error", err, "run_id", in.RunID)
 	}
 }

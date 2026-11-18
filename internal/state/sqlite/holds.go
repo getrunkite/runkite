@@ -38,10 +38,11 @@ func (s *SQLiteStore) UpsertUsageHold(ctx context.Context, h *models.UsageHold) 
 		ts = time.Now().UTC()
 	}
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO usage_holds (run_id, tenant_id, agent_id, usd_hold, tokens_hold, created_at)
-		VALUES (?, ?, ?, ?, ?, ?)
+		INSERT INTO usage_holds (run_id, run_incarnation_id, tenant_id, agent_id, usd_hold, tokens_hold, created_at)
+		VALUES (?, '', ?, ?, ?, ?, ?)
 		ON CONFLICT(run_id) DO UPDATE SET
-			tenant_id=excluded.tenant_id,
+			run_incarnation_id=excluded.run_incarnation_id,
+ tenant_id=excluded.tenant_id,
 			agent_id=excluded.agent_id,
 			usd_hold=excluded.usd_hold,
 			tokens_hold=excluded.tokens_hold,

@@ -11,13 +11,19 @@ import (
 	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
-func (s *Store) BeginRunAttempt(ctx context.Context, id string, generation int64) (bool, error) {
+func (s *Store) BeginRunAttempt(ctx context.Context, id, incarnation string, generation int64) (bool, error) {
+	if incarnation == "" {
+		return false, &state.ErrConflict{Resource: "run", ID: id, Reason: "original record identity required"}
+	}
 	accepted := false
 	err := s.withTransaction(ctx, func(ctx context.Context) error {
 		accepted = false
 		run, err := s.GetRun(ctx, id)
 		if err != nil {
 			return err
+		}
+		if state.RunIdentity(run) != incarnation {
+			return nil
 		}
 		if state.TerminalRunStatus(run.Status) || state.MetadataGeneration(run.Metadata, state.AttemptGenerationKey) > generation {
 			return nil

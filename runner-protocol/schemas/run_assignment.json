@@ -4,7 +4,14 @@
   "title": "RunAssignment",
   "description": "A job dispatched from the control plane to a runner. Contains everything the runner needs to execute one agent turn.",
   "type": "object",
-  "required": ["run_id", "thread_id", "runner_kind", "graph_id"],
+  "required": [
+    "run_id",
+    "thread_id",
+    "runner_kind",
+    "graph_id",
+    "run_incarnation_id",
+    "generation"
+  ],
   "additionalProperties": true,
   "properties": {
     "run_id": {
@@ -20,17 +27,33 @@
     "run_incarnation_id": {
       "type": "string",
       "minLength": 1,
-      "description": "Immutable durable run-row identity, distinct from a reusable client run_id. Preserved on reclaim. Optional for legacy workers; isolated execution requires it and binds durable receipts to this value."
+      "description": "Required opaque identity of the original stored run record. Preserved on reclaim and echoed exactly on every run-specific RPC and bound HTTP request. Missing or superseded identities never borrow current authority.",
+      "maxLength": 256,
+      "pattern": "^[!-~]+$"
     },
     "workload_owner": {
       "type": "object",
       "description": "Optional server-derived verified mTLS holder for strict workload identity. Metadata only, never a bearer credential or accepted identity header. The original certificate binding expires and rotation requires drain/reclaim.",
-      "required": ["uri", "key_sha256", "not_after"],
+      "required": [
+        "uri",
+        "key_sha256",
+        "not_after"
+      ],
       "additionalProperties": false,
       "properties": {
-        "uri": { "type": "string", "maxLength": 2048, "pattern": "^spiffe://" },
-        "key_sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "not_after": { "type": "string", "format": "date-time" }
+        "uri": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^spiffe://"
+        },
+        "key_sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "not_after": {
+          "type": "string",
+          "format": "date-time"
+        }
       }
     },
     "runner_kind": {
@@ -56,7 +79,9 @@
         },
         "tags": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "Optional tags for tracing/filtering."
         },
         "recursion_limit": {
@@ -89,18 +114,26 @@
         },
         "permissions": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "description": "User permissions/roles."
         }
       },
       "additionalProperties": true
     },
     "checkpoint_ref": {
-      "type": ["string", "null"],
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "Opaque checkpoint identity for resume-by-id (time-travel). Null/absent means resume from the thread's latest checkpoint (or a fresh run). LangGraph runners map a non-empty value to configurable.checkpoint_id; non-LangGraph runners must error rather than ignore."
     },
     "resume_command": {
-      "type": ["object", "null"],
+      "type": [
+        "object",
+        "null"
+      ],
       "description": "If non-null, this run is resuming from an interrupt. Contains the client's response.",
       "properties": {
         "interrupt_id": {
@@ -119,18 +152,24 @@
         "type": "string",
         "minLength": 1
       },
-      "default": ["values"],
+      "default": [
+        "values"
+      ],
       "description": "Which data event types the control plane wants. Well-known: values, updates, messages, custom. Unknown strings are passed through for forward compatibility. lifecycle/end/error events are always emitted regardless."
     },
     "connector_needs": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "default": [],
       "description": "Pre-warm hint for connector sessions. NOT an allow-list."
     },
     "allowed_tools": {
       "type": "array",
-      "items": { "type": "string" },
+      "items": {
+        "type": "string"
+      },
       "description": "Optional in-graph tool allowlist. Absent = no runner-side filter. Present (including empty) = runner must refuse tool names not listed before side effects. Distinct from connector policy grants."
     },
     "run_manifest": {

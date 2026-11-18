@@ -53,7 +53,7 @@ func TestNATSQueue_AckFromDifferentConnectionThanDequeue(t *testing.T) {
 	// in-process state) is the one that ends up Acking it -- must
 	// still work, proving the tracking isn't tied to whichever
 	// connection happened to call Fetch.
-	accepted, err := queueB.Ack(ctx, got.RunID, got.Generation)
+	accepted, err := queueB.Ack(ctx, got.RunID, "", got.Generation)
 	if err != nil {
 		t.Fatalf("Ack (B): %v", err)
 	}
@@ -63,7 +63,7 @@ func TestNATSQueue_AckFromDifferentConnectionThanDequeue(t *testing.T) {
 
 	// Confirm it's genuinely gone -- Nack from either connection on an
 	// already-Ack'd job must be a no-op, not a resurrection.
-	if err := queueA.Nack(ctx, got.RunID, got.Generation); err != nil {
+	if err := queueA.Nack(ctx, got.RunID, "", got.Generation); err != nil {
 		t.Fatalf("Nack after cross-connection Ack: %v", err)
 	}
 	extra, _ := queueA.Dequeue(ctx, "test-runner", 300*time.Millisecond)
@@ -106,7 +106,7 @@ func TestNATSQueue_RenewFromDifferentConnectionThanDequeue(t *testing.T) {
 		t.Fatalf("Dequeue (A): got=%v err=%v", got, err)
 	}
 
-	current, err := queueB.Renew(ctx, got.RunID, got.Generation)
+	current, err := queueB.Renew(ctx, got.RunID, "", got.Generation)
 	if err != nil {
 		t.Fatalf("Renew (B): %v", err)
 	}

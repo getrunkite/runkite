@@ -14,14 +14,14 @@ func TestStaleNackDoesNotProduceOrRemoveCurrentAssignment(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		q := &Queue{state: map[string]stateEntry{"fenced-nack": {RunnerKind: "kind", Generation: current, TouchedAtUnixMilli: 10, Job: raw}}}
+		q := &Queue{allowNonAtomicFencing: true, state: map[string]stateEntry{"fenced-nack": {RunnerKind: "kind", Generation: current, TouchedAtUnixMilli: 10, Job: raw}}}
 		// No writer is installed. A stale Nack must return before attempting
 		// a produce, just as it must leave the live state entry untouched.
 		wrong := int64(0)
 		if current == 0 {
 			wrong = 2
 		}
-		if err := q.Nack(context.Background(), "fenced-nack", wrong); err != nil {
+		if err := q.Nack(context.Background(), "fenced-nack", "", wrong); err != nil {
 			t.Fatal(err)
 		}
 		entry, ok := q.getState("fenced-nack")

@@ -26,8 +26,8 @@ func (s *Store) completionDriver() sqlcompletion.Driver {
 		return completionTx{tx}, nil
 	}}
 }
-func (s *Store) BeginRunAttempt(ctx context.Context, id string, generation int64) (bool, error) {
-	return s.completionDriver().BeginRunAttempt(ctx, id, generation)
+func (s *Store) BeginRunAttempt(ctx context.Context, id, incarnation string, generation int64) (bool, error) {
+	return s.completionDriver().BeginRunAttempt(ctx, id, incarnation, generation)
 }
 func (s *Store) CompleteRun(ctx context.Context, c *state.RunCompletion) (state.CompletionResult, error) {
 	return s.completionDriver().CompleteRun(ctx, c)

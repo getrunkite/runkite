@@ -93,7 +93,7 @@ func doMCP(t *testing.T, s *Server, binding *auth.RunBinding, body string) *http
 func payrollBinding() *auth.RunBinding {
 	return &auth.RunBinding{
 		RunID: "run-shrink-1", Generation: 1, TenantID: "acme", AgentID: "payroll",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: "fixture-record",
 	}
 }
 

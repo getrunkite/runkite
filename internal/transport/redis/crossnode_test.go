@@ -42,14 +42,14 @@ func TestCrossNodeDelivery(t *testing.T) {
 	runID := "cross-node-run-1"
 
 	// Node B subscribes FIRST (as an SSE handler would, before the run starts).
-	ch, err := brokerB.Subscribe(ctx, runID)
+	ch, err := brokerB.Subscribe(ctx, runID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Node A publishes, with no shared in-memory state with node B.
 	event := &transport.RunEvent{EventID: "e1", Seq: 1, Method: "values", Namespace: []string{}, Data: []byte(`{}`)}
-	if err := brokerA.Publish(ctx, runID, event); err != nil {
+	if err := brokerA.Publish(ctx, runID, "", event); err != nil {
 		t.Fatal(err)
 	}
 

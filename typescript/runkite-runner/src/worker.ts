@@ -105,6 +105,10 @@ interface TrackedCancelState extends CancelState {
 // than the runner's entire uptime.
 const ORPHAN_CANCEL_CLEANUP_MS = 5 * 60 * 1000;
 
+export function cancelRecordKey(runId: string, runIncarnationId: string): string {
+  return JSON.stringify([runId, runIncarnationId]);
+}
+
 function cancellationEntry(pendingCancels: Map<string, CancelState>, runId: string): TrackedCancelState {
   const existing = pendingCancels.get(runId) as TrackedCancelState | undefined;
   if (existing) {
@@ -134,16 +138,25 @@ function expireOrphanCancel(pendingCancels: Map<string, CancelState>, runId: str
  * attempt and any dispatch that has not registered yet. Orphan signals
  * expire instead of accumulating on every runner watching this kind.
  */
-export function recordCancelSignal(pendingCancels: Map<string, CancelState>, runId: string): void {
-  const entry = cancellationEntry(pendingCancels, runId);
+export function recordCancelSignal(
+  pendingCancels: Map<string, CancelState>,
+  runId: string,
+  runIncarnationId = "",
+): void {
+  const key = cancelRecordKey(runId, runIncarnationId);
+  const entry = cancellationEntry(pendingCancels, key);
   entry.cancelled = true;
   for (const attempt of entry._attempts) attempt.cancelled = true;
-  if (entry._attempts.size === 0) expireOrphanCancel(pendingCancels, runId, entry);
+  if (entry._attempts.size === 0) expireOrphanCancel(pendingCancels, key, entry);
 }
 
 /** Each registration belongs to one attempt, including overlapping generations. */
-export function registerRun(pendingCancels: Map<string, CancelState>, runId: string): CancelState {
-  const entry = cancellationEntry(pendingCancels, runId);
+export function registerRun(
+  pendingCancels: Map<string, CancelState>,
+  runId: string,
+  runIncarnationId = "",
+): CancelState {
+  const entry = cancellationEntry(pendingCancels, cancelRecordKey(runId, runIncarnationId));
   if (entry._cleanupTimer) {
     clearTimeout(entry._cleanupTimer);
     entry._cleanupTimer = undefined;
@@ -154,7 +167,13 @@ export function registerRun(pendingCancels: Map<string, CancelState>, runId: str
 }
 
 /** Release only this attempt; preserve other attempts and early user cancels. */
-export function unregisterRun(pendingCancels: Map<string, CancelState>, runId: string, attempt: CancelState): void {
+export function unregisterRun(
+  pendingCancels: Map<string, CancelState>,
+  runId: string,
+  attempt: CancelState,
+  runIncarnationId = "",
+): void {
+  runId = cancelRecordKey(runId, runIncarnationId);
   const entry = pendingCancels.get(runId) as TrackedCancelState | undefined;
   if (!entry?._attempts?.delete(attempt) || entry._attempts.size !== 0) return;
   if (entry.cancelled) {
@@ -225,10 +244,11 @@ export async function runWorker(opts: WorkerOptions): Promise<void> {
     while (!watcherStopped) {
       try {
         await new Promise<void>((resolve, reject) => {
-          const call = client.watchCancels({ runnerKind: opts.runnerKind }, metadata);
+          const call = client.watchCancels({ runnerKind: opts.runnerKind, assignmentIdentityVersion: 1 }, metadata);
           call.on("data", (signal: CancelSignal) => {
             logger.info(`Cancel signal received via gRPC for run ${signal.runId}`);
-            recordCancelSignal(pendingCancels, signal.runId);
+            if (typeof signal.runIncarnationId === "string" && /^[\x21-\x7e]{1,256}$/.test(signal.runIncarnationId))
+              recordCancelSignal(pendingCancels, signal.runId, signal.runIncarnationId);
           });
           call.on("error", reject);
           call.on("end", resolve);
@@ -310,9 +330,14 @@ export async function handleJob(
   // always has a defined value even if JSON.parse/assignment.run_id
   // itself threw first.
   let generation = 0;
+  let runIncarnationId: string | undefined;
   try {
     const assignment: RunAssignment = JSON.parse(response.assignmentJson);
     runId = assignment.run_id;
+    const proof = assignment.run_incarnation_id;
+    if (typeof proof !== "string" || !/^[\x21-\x7e]{1,256}$/.test(proof))
+      throw new CompletionDeliveryError("assignment has no valid original record identity");
+    runIncarnationId = proof;
     // Legacy assignments may omit this field. Zero matches only a legacy-zero
     // assignment; it cannot renew or complete a positive-generation attempt.
     generation = assignment.generation ?? 0;
@@ -333,6 +358,7 @@ export async function handleJob(
           {
             tenantId: assignment.tenant_id,
             runId: runId!,
+            runIncarnationId,
             generation,
             runnerKind: opts?.runnerKind,
             runnerToken: opts?.runnerToken,
@@ -356,12 +382,14 @@ export async function handleJob(
   } catch (err) {
     logger.error(`Worker error handling run_id=${runId}:`, err);
     if (err instanceof CompletionDeliveryError) return;
-    if (runId !== undefined) {
+    if (runId !== undefined && runIncarnationId !== undefined) {
       const failedRunId = runId;
+      const failedRunIncarnationId = runIncarnationId;
       await new Promise<void>((resolve) => {
         client.reportStatus(
           {
             runId: failedRunId,
+            runIncarnationId: failedRunIncarnationId,
             status: "error",
             errorMessage: err instanceof Error ? err.message : String(err),
             generation: String(generation),
@@ -391,13 +419,15 @@ async function handleJobUnderTenant(
       runnerKind: opts.runnerKind,
       runnerToken: opts.runnerToken,
       generation,
+      runIncarnationId: assignment.run_incarnation_id,
       requireAuthority: assignment.workload_owner !== undefined,
     }))
   ) {
     return undefined;
   }
 
-  const cancelState = registerRun(pendingCancels, runId);
+  const runIncarnationId = assignment.run_incarnation_id!;
+  const cancelState = registerRun(pendingCancels, runId, runIncarnationId);
 
   // Started as soon as runId is known, BEFORE streamEvents' first
   // message -- see heartbeat.ts / the Python runner's mirrored change
@@ -407,6 +437,7 @@ async function handleJobUnderTenant(
   // instead of racing a second runner that's already taken over.
   const heartbeat = startHeartbeatLoop(client, runId, metadata, {
     generation,
+    runIncarnationId,
     onSuperseded: () => {
       cancelState.cancelled = true;
     },
@@ -431,7 +462,7 @@ async function handleJobUnderTenant(
     });
 
     const sendEvent = async (event: RunEvent): Promise<void> => {
-      call.write({ runId: runId!, eventJson: JSON.stringify(event), generation: String(generation) });
+      call.write({ runId: runId!, runIncarnationId, eventJson: JSON.stringify(event), generation: String(generation) });
     };
 
     let status;
@@ -453,6 +484,7 @@ async function handleJobUnderTenant(
       client,
       {
         runId,
+        runIncarnationId,
         status,
         errorMessage: status === "error" ? "see error event" : "",
         generation: String(generation),
@@ -467,7 +499,7 @@ async function handleJobUnderTenant(
   } finally {
     heartbeat.stop();
     // A previous generation can finish while its replacement is still active.
-    unregisterRun(pendingCancels, runId, cancelState);
+    unregisterRun(pendingCancels, runId, cancelState, runIncarnationId);
   }
 }
 
@@ -506,7 +538,7 @@ export async function pollLoop(
     let response: GetJobResponse;
     try {
       response = await new Promise<GetJobResponse>((resolve, reject) => {
-        client.getJob({ runnerKind, timeoutSeconds: 30 }, metadata, (err, resp) => {
+        client.getJob({ runnerKind, timeoutSeconds: 30, assignmentIdentityVersion: 1 }, metadata, (err, resp) => {
           if (err) reject(err);
           else resolve(resp);
         });

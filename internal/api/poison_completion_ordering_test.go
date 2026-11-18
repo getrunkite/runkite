@@ -22,19 +22,19 @@ type poisonOrderingBroker struct {
 	closeCalls int
 }
 
-func (b *poisonOrderingBroker) Replay(ctx context.Context, id string, since int64) ([]*transport.RunEvent, error) {
+func (b *poisonOrderingBroker) Replay(ctx context.Context, id string, incarnation string, since int64) ([]*transport.RunEvent, error) {
 	if b.failReplay {
 		return nil, errors.New("injected poison recovery replay outage")
 	}
-	return b.EventBroker.Replay(ctx, id, since)
+	return b.EventBroker.Replay(ctx, id, incarnation, since)
 }
 
-func (b *poisonOrderingBroker) Close(id string) error {
+func (b *poisonOrderingBroker) Close(id string, incarnation string) error {
 	b.closeCalls++
 	if b.failClose {
 		return errors.New("injected postcommit poison finalization outage")
 	}
-	return b.EventBroker.Close(id)
+	return b.EventBroker.Close(id, incarnation)
 }
 
 func beginPoisonOrderingAttempt(t *testing.T, store *sqlite.SQLiteStore, q *inprocess.Queue) {
@@ -44,7 +44,7 @@ func beginPoisonOrderingAttempt(t *testing.T, store *sqlite.SQLiteStore, q *inpr
 	if err != nil || assignment == nil || assignment.Generation != 1 {
 		t.Fatal("dequeue", assignment, err)
 	}
-	if accepted, err := store.BeginRunAttempt(ctx, "run", 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil || !accepted {
 		t.Fatal("begin attempt", accepted, err)
 	}
 }
@@ -63,13 +63,13 @@ func retainedPoisonOrderingPill(t *testing.T, q *inprocess.Queue) transport.Pois
 	return dead[0]
 }
 
-func publishPoisonOrderingSuccess(t *testing.T, b transport.EventBroker) {
+func publishPoisonOrderingSuccess(t *testing.T, store state.Store, b transport.EventBroker) {
 	t.Helper()
 	for _, event := range []*transport.RunEvent{
 		{EventID: "final-values", Generation: 1, Seq: 1, Method: "values", Data: json.RawMessage(`{"answer":"original success"}`)},
 		{EventID: "final-end", Generation: 1, Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)},
 	} {
-		if err := b.Publish(context.Background(), "run", event); err != nil {
+		if err := b.Publish(context.Background(), "run", originalRunIdentity(t, store, "run"), withOriginalRunEvent(originalRunIdentity(t, store, "run"), event)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -117,7 +117,7 @@ func TestPoisonCompletionDatabaseOutageRetainsLeaseForNextTick(t *testing.T) {
 	if lease, err := q.LookupInflight(ctx, "run"); err != nil || lease == nil {
 		t.Fatal("API must leave Ack to the reaper", lease, err)
 	}
-	if acknowledged, err := q.Ack(ctx, "run", repeated.Generation-1); err != nil || !acknowledged {
+	if acknowledged, err := q.Ack(ctx, "run", originalRunIdentity(t, store, "run"), repeated.Generation-1); err != nil || !acknowledged {
 		t.Fatal("Ack after durable completion", acknowledged, err)
 	}
 	run, err = store.GetRun(ctx, "run")
@@ -131,7 +131,7 @@ func TestPoisonCompletionBrokerOutageCannotInventFailedAgentOutcome(t *testing.T
 	fault := &poisonOrderingBroker{EventBroker: b, failReplay: true}
 	plane := api.NewServer(store, q, fault, c)
 	beginPoisonOrderingAttempt(t, store, q)
-	publishPoisonOrderingSuccess(t, b)
+	publishPoisonOrderingSuccess(t, store, b)
 	pill := retainedPoisonOrderingPill(t, q)
 	ctx := context.Background()
 	if _, err := plane.CompleteReclaimedRun(ctx, pill, "retry ceiling reached"); err == nil {
@@ -154,7 +154,7 @@ func TestPoisonCompletionPostcommitFailureRetriesFinalizationBeforeAck(t *testin
 	fault := &poisonOrderingBroker{EventBroker: b, failClose: true}
 	plane := api.NewServer(store, q, fault, c)
 	beginPoisonOrderingAttempt(t, store, q)
-	publishPoisonOrderingSuccess(t, b)
+	publishPoisonOrderingSuccess(t, store, b)
 	pill := retainedPoisonOrderingPill(t, q)
 	ctx := context.Background()
 	if _, err := plane.CompleteReclaimedRun(ctx, pill, "retry ceiling reached"); err == nil {
@@ -173,7 +173,7 @@ func TestPoisonCompletionPostcommitFailureRetriesFinalizationBeforeAck(t *testin
 		t.Fatalf("finalization calls=%d, want failed call plus successful retry", fault.closeCalls)
 	}
 	assertPoisonOrderingSuccess(t, store)
-	if acknowledged, err := q.Ack(ctx, "run", repeated.Generation-1); err != nil || !acknowledged {
+	if acknowledged, err := q.Ack(ctx, "run", originalRunIdentity(t, store, "run"), repeated.Generation-1); err != nil || !acknowledged {
 		t.Fatal("finalized result must be acknowledged", acknowledged, err)
 	}
 }
@@ -182,7 +182,7 @@ func TestPoisonCompletionLostAckRepeatsSamePillWithoutDuplicatingResult(t *testi
 	store, q, b, c := completionFixture(t)
 	plane := api.NewServer(store, q, b, c)
 	beginPoisonOrderingAttempt(t, store, q)
-	publishPoisonOrderingSuccess(t, b)
+	publishPoisonOrderingSuccess(t, store, b)
 	ctx := context.Background()
 	for attempt := 0; attempt < 2; attempt++ {
 		pill := retainedPoisonOrderingPill(t, q)
@@ -191,10 +191,10 @@ func TestPoisonCompletionLostAckRepeatsSamePillWithoutDuplicatingResult(t *testi
 		}
 		assertPoisonOrderingSuccess(t, store)
 	}
-	if acknowledged, err := q.Ack(ctx, "run", 0); err != nil || acknowledged {
+	if acknowledged, err := q.Ack(ctx, "run", originalRunIdentity(t, store, "run"), 0); err != nil || acknowledged {
 		t.Fatal("stale generation must not acknowledge retained lease", acknowledged, err)
 	}
-	if acknowledged, err := q.Ack(ctx, "run", 1); err != nil || !acknowledged {
+	if acknowledged, err := q.Ack(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil || !acknowledged {
 		t.Fatal("current generation must acknowledge finalized lease", acknowledged, err)
 	}
 	if lease, err := q.LookupInflight(ctx, "run"); err != nil || lease != nil {
@@ -235,7 +235,7 @@ func TestPoisonCompletionBindsOrphanedClaimBeforeFallback(t *testing.T) {
 	if lease, err := q.LookupInflight(ctx, "run"); err != nil || lease == nil || lease.Generation != 1 {
 		t.Fatal("completion removed orphaned claim before Ack", lease, err)
 	}
-	if acknowledged, err := q.Ack(ctx, "run", pill.Generation-1); err != nil || !acknowledged {
+	if acknowledged, err := q.Ack(ctx, "run", originalRunIdentity(t, store, "run"), pill.Generation-1); err != nil || !acknowledged {
 		t.Fatal("Ack orphaned claim after durable completion", acknowledged, err)
 	}
 }
@@ -255,7 +255,7 @@ func TestPoisonCompletionRejectsPillForSupersededQueueGeneration(t *testing.T) {
 	if err != nil || assignment == nil || assignment.Generation != 2 {
 		t.Fatal("new dispatch", assignment, err)
 	}
-	if accepted, err := store.BeginRunAttempt(ctx, "run", 2); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 2); err != nil || !accepted {
 		t.Fatal("begin newer attempt", accepted, err)
 	}
 	if accepted, err := plane.CompleteReclaimedRun(ctx, stalePill, "stale poison error"); err != nil || accepted {

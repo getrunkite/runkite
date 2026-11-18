@@ -119,6 +119,7 @@ async def test_happy_structural() -> None:
         "input": {"messages": [{"role": "user", "content": "Reply with exactly: pong"}]},
         "config": {"configurable": {}},
         "stream_modes": ["values", "updates"],
+        "run_incarnation_id": "record-fixture",
     }
     events = await run_once(assignment)
     assert_structural(events, expect_terminal="end")
@@ -148,6 +149,7 @@ async def test_tool_structural() -> None:
             },
             "config": {"configurable": {}},
             "stream_modes": ["values", "updates"],
+            "run_incarnation_id": "record-fixture",
         }
         last_events = await run_once(assignment)
         assert_structural(last_events, expect_terminal="end")
@@ -166,6 +168,7 @@ async def test_cancel_structural() -> None:
         "input": {"messages": [{"role": "user", "content": "Write three short sentences about rivers."}]},
         "config": {"configurable": {}},
         "stream_modes": ["values", "updates"],
+        "run_incarnation_id": "record-fixture",
     }
     events = await run_once(assignment, cancel_after_seq=1)
     assert_structural(events, expect_terminal="end")

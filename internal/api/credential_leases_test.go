@@ -63,7 +63,9 @@ func newVaultActionFixture(t *testing.T, authority string) (*actionAPIEnv, *acti
 	if err != nil || live == nil {
 		t.Fatal(err)
 	}
-	if _, err := env.queue.Ack(env.ctx, "run", live.Generation); err != nil {
+	if _, err := env.queue.Ack(env.ctx, "run", originalRunIdentity(t, env.store,
+
+		"run"), live.Generation); err != nil {
 		t.Fatal(err)
 	}
 	live.RunIncarnationID = run.IncarnationID
@@ -246,6 +248,9 @@ func replaceVaultAssignment(t *testing.T, env *actionAPIEnv, change func(*transp
 	if err != nil || live == nil {
 		t.Fatal(err)
 	}
+	if accepted, err := env.queue.Ack(env.ctx, live.RunID, live.RunIncarnationID, live.Generation); err != nil || !accepted {
+		t.Fatal("replace original fixture assignment", accepted, err)
+	}
 	change(live)
 	if err := env.queue.Enqueue(env.ctx, live); err != nil {
 		t.Fatal(err)
@@ -262,11 +267,13 @@ func TestVaultCancelReclaimAndIdentityChangeDuringIssueNeverReleaseToMCP(t *test
 			p.issueHook = func(context.Context) {
 				switch scenario {
 				case "cancel":
-					if err := env.queue.Cancel(env.ctx, "run"); err != nil {
+					if err := env.queue.Cancel(env.ctx, "run", originalRunIdentity(t, env.store,
+
+						"run")); err != nil {
 						t.Fatal(err)
 					}
 				case "reclaim":
-					if ok, err := env.store.BeginRunAttempt(env.ctx, "run", 3); err != nil || !ok {
+					if ok, err := env.store.BeginRunAttempt(env.ctx, "run", originalRunIdentity(t, env.store, "run"), 3); err != nil || !ok {
 						t.Fatal(err)
 					}
 					replaceVaultAssignment(t, env, func(a *transport.RunAssignment) { a.Generation = 3 })

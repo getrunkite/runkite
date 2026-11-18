@@ -9,8 +9,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import secrets
 import ssl
+import stat
 import subprocess
 import sys
 import tempfile
@@ -19,24 +21,125 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 import httpx
 
 ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "scripts"))
+from isolated_fixture_environment import fixture_inputs, sterile_environment  # noqa: E402
+
 sys.path.insert(0, str(ROOT / "python/adapters/agent_framework_adapter"))
 from test_e2e import Process, free_port, wait_for  # noqa: E402
+
+
+def copy_gateway_tls_bundle(source: Path, destination: Path, gateway: str) -> None:
+    """Copy only explicit fixture mTLS files into the child's private CLI state."""
+    try:
+        if not source.is_absolute() or source.is_symlink():
+            raise AssertionError("owned gateway TLS config must be explicitly selected")
+        root = source.resolve(strict=True)
+        gateway_name = re.sub(r"[^a-zA-Z0-9._-]", "_", gateway)
+        relative = Path("openshell") / "gateways" / gateway_name / "mtls"
+        bundle = destination / relative
+        bundle.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for name in ("ca.crt", "tls.crt", "tls.key"):
+            selected = root / relative / name
+            resolved = selected.resolve(strict=True)
+            if selected.is_symlink() or not resolved.is_relative_to(root) or not stat.S_ISREG(selected.stat().st_mode):
+                raise AssertionError("owned gateway TLS bundle is invalid")
+            with selected.open("rb") as source_file:
+                content = source_file.read(65537)
+            if len(content) > 65536:
+                raise AssertionError("owned gateway TLS bundle exceeds its bound")
+            target = bundle / name
+            descriptor = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, "wb") as output:
+                output.write(content)
+    except OSError:
+        raise AssertionError("owned gateway TLS bundle is unavailable") from None
+
+
+def wait_for_owned_sandbox_state(
+    cli: str, gateway: str, sandbox: str, environment: dict, *, present: bool, timeout=30
+) -> float:
+    """Observe one exact owned runtime without deleting or reconciling it."""
+    if not re.fullmatch(r"rk-[a-f0-9]{16}", sandbox):
+        raise AssertionError("cancellation cleanup requires an exact owned sandbox")
+    started = time.monotonic()
+    deadline = started + timeout
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(
+                [
+                    cli,
+                    "--gateway-endpoint",
+                    gateway,
+                    "--workspace",
+                    "default",
+                    "sandbox",
+                    "list",
+                    "--output",
+                    "json",
+                    "--selector",
+                    f"runkite_attempt={sandbox}",
+                ],
+                env=environment,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                timeout=min(5, max(0.01, deadline - time.monotonic())),
+                check=False,
+            )
+            if len(result.stdout) > 1 << 20:
+                raise AssertionError("cancellation cleanup listing exceeds its bound")
+            if result.returncode == 0:
+                listing = json.loads(result.stdout)
+                if (
+                    not isinstance(listing, dict)
+                    or not isinstance(listing.get("sandboxes"), list)
+                    or listing.get("next_page_token")
+                ):
+                    raise AssertionError("cancellation cleanup listing is incomplete")
+                if len(listing["sandboxes"]) > 1:
+                    raise AssertionError("cancellation runtime selector is ambiguous")
+                for item in listing["sandboxes"]:
+                    name = item.get("name") if isinstance(item, dict) else None
+                    metadata = item.get("metadata") if isinstance(item, dict) else None
+                    if not name and isinstance(metadata, dict):
+                        name = metadata.get("name")
+                    if name != sandbox:
+                        raise AssertionError("cancellation cleanup listing escaped its owned selector")
+                if bool(listing["sandboxes"]) == present:
+                    return round(time.monotonic() - started, 3)
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            # Temporary gateway failure is not absence or cleanup success.
+            pass
+        time.sleep(min(0.25, max(0, deadline - time.monotonic())))
+    if present:
+        raise AssertionError("owned sandbox was not observed present before cancellation")
+    raise AssertionError("cancelled owned sandbox remained present before fixture teardown")
+
+
+def wait_for_owned_sandbox_presence(cli: str, gateway: str, sandbox: str, environment: dict, *, timeout=30) -> float:
+    return wait_for_owned_sandbox_state(cli, gateway, sandbox, environment, present=True, timeout=timeout)
+
+
+def wait_for_owned_sandbox_absence(cli: str, gateway: str, sandbox: str, environment: dict, *, timeout=30) -> float:
+    return wait_for_owned_sandbox_state(cli, gateway, sandbox, environment, present=False, timeout=timeout)
 
 
 @unittest.skipUnless(os.environ.get("RUNKITE_TEST_ISOLATED") == "1", "explicit disposable runtime opt-in required")
 class ManagedIsolatedE2E(unittest.TestCase):
     def setUp(self):
+        self.inputs = fixture_inputs(os.environ)
         self.directory = Path(tempfile.mkdtemp(prefix="runkite-isolated-e2e-"))
+        self.environment = sterile_environment(self.directory / "environment", source=os.environ)
         self.processes = []
         self.servers = []
         self.runtime_names = set()
-        self.ha = os.environ.get("RUNKITE_TEST_ISOLATED_HA") == "1"
-        self.repetitions = int(os.environ.get("RUNKITE_TEST_ISOLATED_REPETITIONS", "1"))
+        self.ha = self.inputs.get("RUNKITE_TEST_ISOLATED_HA") == "1"
+        self.repetitions = int(self.inputs.get("RUNKITE_TEST_ISOLATED_REPETITIONS", "1"))
         self.assertTrue(1 <= self.repetitions <= 20, "bounded repetitions must be from 1 to 20")
         self.started = time.monotonic()
         self.evidence = {
@@ -45,10 +148,12 @@ class ManagedIsolatedE2E(unittest.TestCase):
             if self.ha
             else "real SQLite plane + installed trusted parent + external OpenShell",
             "cases": [],
-            "runtime_gateway_tls": os.environ.get("RUNKITE_TEST_ISOLATED_GATEWAY_TLS") == "1",
+            "cancellation_observations": [],
+            "live_generation_observations": [],
+            "runtime_gateway_tls": self.inputs.get("RUNKITE_TEST_ISOLATED_GATEWAY_TLS") == "1",
         }
         self.addCleanup(self.cleanup)
-        self.gateway = os.environ["RUNKITE_TEST_ISOLATED_GATEWAY"]
+        self.gateway = self.inputs["RUNKITE_TEST_ISOLATED_GATEWAY"]
         self.assertIn(
             urlparse(self.gateway).hostname, {"127.0.0.1", "::1"}, "only a dedicated loopback gateway is allowed"
         )
@@ -57,11 +162,17 @@ class ManagedIsolatedE2E(unittest.TestCase):
             self.assertTrue(
                 self.evidence["runtime_gateway_tls"], "combined fixture must enable authenticated gateway TLS"
             )
-        self.cli = str(Path(os.environ["RUNKITE_TEST_ISOLATED_CLI"]).resolve())
-        self.image = os.environ["RUNKITE_TEST_ISOLATED_IMAGE"]
+        if urlparse(self.gateway).scheme == "https":
+            selected_config = self.inputs.get("RUNKITE_TEST_ISOLATED_GATEWAY_CONFIG")
+            self.assertTrue(selected_config, "owned gateway TLS config must be explicitly selected")
+            copy_gateway_tls_bundle(Path(selected_config), Path(self.environment["XDG_CONFIG_HOME"]), self.gateway)
+        self.cli = str(Path(self.inputs["RUNKITE_TEST_ISOLATED_CLI"]).resolve())
+        self.image = self.inputs["RUNKITE_TEST_ISOLATED_IMAGE"]
         self.api_key, self.runner_token, self.downstream_secret = (secrets.token_urlsafe(32) for _ in range(3))
         self.effects = 0
         self.lock = threading.Lock()
+        self.run_proofs = {}
+        self.owned_run_ids = set()
         test = self
 
         class Tool(BaseHTTPRequestHandler):
@@ -156,28 +267,6 @@ class ManagedIsolatedE2E(unittest.TestCase):
                 }
             )
         )
-        self.environment = {
-            key: value
-            for key, value in os.environ.items()
-            if key
-            not in {
-                "PYTHONPATH",
-                "POSTGRES_DSN",
-                "MYSQL_DSN",
-                "MONGO_URI",
-                "REDIS_URL",
-                "NATS_URL",
-                "KAFKA_URL",
-                "DATABASE_PATH",
-                "LANGGRAPH_CONFIG",
-                "RUNNER_TOKEN",
-            }
-            and not key.startswith("RUNNER_TOKEN_")
-            and not key.startswith("RUNNER_TENANTS_")
-            and not key.startswith(
-                ("RUNKITE_TEST_", "RUNKITE_ISOLATED_HA_", "RUNKITE_TLS_", "RUNKITE_WORKLOAD_", "TLS_", "GRPC_TLS_")
-            )
-        }
         self.plane_environment = {
             **self.environment,
             "DATABASE_PATH": str(self.directory / "state.db"),
@@ -192,8 +281,8 @@ class ManagedIsolatedE2E(unittest.TestCase):
             "RUNKITE_EXECUTION_POOL": "fixture",
         }
         if self.ha:
-            postgres = os.environ["RUNKITE_TEST_ISOLATED_POSTGRES_DSN"]
-            redis = os.environ["RUNKITE_TEST_ISOLATED_REDIS_URL"]
+            postgres = self.inputs["RUNKITE_TEST_ISOLATED_POSTGRES_DSN"]
+            redis = self.inputs["RUNKITE_TEST_ISOLATED_REDIS_URL"]
             self.assertIn(urlparse(postgres).hostname, {"127.0.0.1", "::1"})
             self.assertTrue(urlparse(postgres).path.startswith("/runkite_isolated_ha_"))
             self.assertIn(urlparse(redis).hostname, {"127.0.0.1", "::1"})
@@ -221,6 +310,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
         for index in range(len(self.bases)):
             self.start_plane(index)
         self.plane = self.planes[0]
+        self.assignment_relay, _, _ = self.relay_after_receipt()
         self.start_parent()
 
     def make_certificates(self):
@@ -228,7 +318,9 @@ class ManagedIsolatedE2E(unittest.TestCase):
         self.pki.mkdir(mode=0o700)
 
         def openssl(*args):
-            result = subprocess.run(["openssl", *args], cwd=self.pki, capture_output=True, text=True, timeout=30)
+            result = subprocess.run(
+                ["openssl", *args], cwd=self.pki, env=self.environment, capture_output=True, text=True, timeout=30
+            )
             self.assertEqual(result.returncode, 0, "owned fixture certificate generation failed")
 
         (self.pki / "ca.conf").write_text(
@@ -321,7 +413,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
     def start_plane(self, index):
         process = self.launch(
             [
-                os.environ["RUNKITE_TEST_BINARY"],
+                self.inputs["RUNKITE_TEST_BINARY"],
                 "serve" if self.ha else "dev",
                 "--config",
                 str(self.config),
@@ -339,11 +431,12 @@ class ManagedIsolatedE2E(unittest.TestCase):
         wait_for("isolated plane readiness", lambda: self.http.get(self.bases[index] + "/readyz").is_success)
 
     def install_parent(self):
-        wheel = Path(os.environ["RUNKITE_TEST_RUNNER_WHEEL"]).resolve()
+        wheel = Path(self.inputs["RUNKITE_TEST_RUNNER_WHEEL"]).resolve()
         self.assertTrue(wheel.is_file())
         consumer = self.directory / "consumer"
         subprocess.run(
             [sys.executable, "-I", "-m", "venv", "--without-pip", str(consumer)],
+            env=self.environment,
             check=True,
             capture_output=True,
             timeout=30,
@@ -405,7 +498,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
                 "--grpc-address",
                 self.grpc,
                 "--http-address",
-                address or self.base,
+                address or self.assignment_relay,
                 "--execution-pool",
                 "fixture",
             ],
@@ -431,7 +524,12 @@ class ManagedIsolatedE2E(unittest.TestCase):
         return self.request("/threads", {})["thread_id"]
 
     def create_run(self, thread, value):
-        return self.request(f"/threads/{thread}/runs", {"agent_id": "isolated_echo", "input": value})["run_id"]
+        run = "isolated-fixture-" + secrets.token_hex(16)
+        with self.lock:
+            self.owned_run_ids.add(run)
+        created = self.request(f"/threads/{thread}/runs", {"run_id": run, "agent_id": "isolated_echo", "input": value})
+        self.assertEqual(created["run_id"], run, "created fixture run identity changed")
+        return run
 
     def final(self, thread, run):
         def done():
@@ -441,21 +539,34 @@ class ManagedIsolatedE2E(unittest.TestCase):
         return wait_for("isolated durable result", done, timeout=120)
 
     def state(self, thread, run, generation=None):
+        with self.lock:
+            if run not in self.run_proofs:
+                return None
         if generation is None:
             current = self.request(f"/threads/{thread}/runs/{run}")
             generation = current.get("metadata", {}).get("_runkite_attempt_generation", 1)
         response = self.client_for(self.parent_identity).get(
             self.base + f"/internal/checkpoints/{thread}/adapter-state",
-            headers={
-                "X-Runner-Kind": "pool-fixture",
-                "X-Runner-Token": self.runner_token,
-                "X-Runkite-Run-Id": run,
-                "X-Runkite-Generation": str(generation),
-            },
+            headers=self.bound_headers(run, generation),
         )
         return response.json() if response.status_code == 200 else None
 
-    def relay_after_receipt(self, thread):
+    def observe_assignment_proof(self, method, path, headers, status):
+        run = headers.get("X-Runkite-Run-Id")
+        if method != "GET" or not run or path != f"/internal/runs/{quote(run, safe='')}/status" or status != 200:
+            return
+        with self.lock:
+            if run not in self.owned_run_ids:
+                return
+        proof = headers.get("X-Runkite-Run-Incarnation")
+        self.assertTrue(
+            isinstance(proof, str) and 1 <= len(proof) <= 256 and all(0x21 <= ord(value) <= 0x7E for value in proof),
+            "installed parent supplied no valid original record proof",
+        )
+        with self.lock:
+            self.assertTrue(self.run_proofs.setdefault(run, proof) == proof, "fixture run record identity changed")
+
+    def relay_after_receipt(self, thread=None):
         test = self
         committed = threading.Event()
         observed = {}
@@ -476,6 +587,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
                         timeout=120, trust_env=False, verify=test.tls_context(test.parent_identity) if test.ha else True
                     ) as client:
                         upstream = client.request(self.command, test.base + self.path, headers=headers, content=body)
+                    test.observe_assignment_proof(self.command, self.path, self.headers, upstream.status_code)
                     state = (
                         json.loads(body)
                         if self.command == "PUT"
@@ -487,6 +599,15 @@ class ManagedIsolatedE2E(unittest.TestCase):
                         observed.update(state)
                         observed["_fixture_receipt_generation"] = int(self.headers["X-Runkite-Generation"])
                         run = self.headers["X-Runkite-Run-Id"]
+                        proof = test.bound_headers(run)["X-Runkite-Run-Incarnation"]
+                        test.assertTrue(
+                            self.headers["X-Runkite-Run-Incarnation"] == proof, "receipt request proof changed"
+                        )
+                        observed["_fixture_run_incarnation_id"] = proof
+                        test.assertTrue(
+                            state["receipts"].get(proof, {}).get("run_id") == run,
+                            "committed isolated receipt belongs to another original record",
+                        )
                         with httpx.Client(
                             timeout=15,
                             trust_env=False,
@@ -606,25 +727,27 @@ class ManagedIsolatedE2E(unittest.TestCase):
         self.assertEqual(self.effects, count)
         stale = self.client_for(self.parent_identity).post(
             self.base + "/internal/connectors/fixture/session",
-            headers={
-                "X-Runner-Kind": "pool-fixture",
-                "X-Runner-Token": self.runner_token,
-                "X-Runkite-Run-Id": uncertain,
-                "X-Runkite-Generation": str(intent["intent"]["generation"]),
-            },
+            headers=self.bound_headers(uncertain, intent["intent"]["generation"]),
             json={},
         )
         self.assertEqual(stale.status_code, 403)
+        self.assertIn(stale.json().get("reason_code"), {"run_not_inflight", "run_generation_mismatch"})
         self.evidence["cases"].append(
             "uncertain launch intent refuses replay after reclaim; stale attempt cannot obtain connector authority"
         )
 
         cancelled_thread = self.thread()
-        cancelled = self.create_run(cancelled_thread, {"sleep": True})
+        cancelled = self.create_run(
+            cancelled_thread,
+            {
+                "sleep": True,
+                "usage_fixture": {"prompt_tokens": 5, "completion_tokens": 2, "model": "synthetic-cancel"},
+            },
+        )
         intent = wait_for("cancelled launch intent", lambda: self.state(cancelled_thread, cancelled), timeout=120)
         self.runtime_names.add(intent["intent"]["sandbox"])
-        self.request(f"/threads/{cancelled_thread}/runs/{cancelled}/cancel", {})
-        self.assertEqual(self.final(cancelled_thread, cancelled)["status"], "interrupted")
+        report = self.wait_for_partial_usage(cancelled_thread, cancelled, 5, 2)
+        self.cancel_active_workload(cancelled_thread, cancelled, report, intent, 5, 2)
         self.evidence["cases"].append(
             "managed cancellation retains interrupted durable status and owned runtime handle"
         )
@@ -635,12 +758,209 @@ class ManagedIsolatedE2E(unittest.TestCase):
         self.evidence["passed"] = True
 
     def bound_headers(self, run, generation=1):
+        with self.lock:
+            proof = self.run_proofs.get(run)
+        self.assertIsNotNone(proof, "original assignment proof has not been observed")
         return {
             "X-Runner-Kind": "pool-fixture",
             "X-Runner-Token": self.runner_token,
             "X-Runkite-Run-Id": run,
             "X-Runkite-Generation": str(generation),
+            "X-Runkite-Run-Incarnation": proof,
         }
+
+    def wait_for_partial_usage(self, thread, run, prompt_tokens, completion_tokens):
+        def committed():
+            current = self.request(f"/threads/{thread}/runs/{run}")
+            generation = current.get("metadata", {}).get("_runkite_attempt_generation")
+            if current.get("status") != "running" or type(generation) is not int or generation <= 0:
+                return None
+            response = self.client_for(self.parent_identity).get(
+                self.base + f"/internal/runs/{run}/usage",
+                headers=self.bound_headers(run, generation),
+            )
+            if response.status_code != 200:
+                return None
+            snapshot = response.json()["snapshot"]
+            if not isinstance(snapshot, dict):
+                return None
+            expected = {
+                "reported_generation": generation,
+                "source": "isolated_workload",
+                "status": "reported",
+                "complete": False,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            }
+            return snapshot if all(snapshot.get(key) == value for key, value in expected.items()) else None
+
+        return wait_for("current live workload partial usage acknowledgement", committed, timeout=120)
+
+    def cancel_active_workload(
+        self, thread, run, report, intent, prompt_tokens, completion_tokens, *, replica=0, repeats=1
+    ):
+        """Prove activity, exact presence and current authority before cancellation."""
+        generation = report.get("reported_generation")
+        self.assertTrue(type(generation) is int and generation > 0, "cancellation requires a current generation")
+        for key, value in {
+            "source": "isolated_workload",
+            "status": "reported",
+            "complete": False,
+            "prompt_tokens": prompt_tokens,
+            "completion_tokens": completion_tokens,
+        }.items():
+            self.assertEqual(report.get(key), value, "cancellation requires actual partial workload activity")
+        launch = intent.get("intent") if isinstance(intent, dict) else None
+        self.assertIsInstance(launch, dict, "cancellation requires its exact current launch intent")
+        self.assertEqual(launch.get("run_id"), run, "cancellation intent belongs to another run")
+        self.assertEqual(launch.get("generation"), generation, "cancellation activity and intent generations differ")
+        self.assertTrue(
+            launch.get("run_incarnation_id") == self.bound_headers(run, generation)["X-Runkite-Run-Incarnation"],
+            "cancellation intent belongs to another original record",
+        )
+        sandbox = launch.get("sandbox")
+        self.assertTrue(
+            isinstance(sandbox, str) and re.fullmatch(r"rk-[a-f0-9]{16}", sandbox),
+            "cancellation requires an owned sandbox",
+        )
+        self.runtime_names.add(sandbox)
+
+        def assert_live():
+            value = self.request(f"/threads/{thread}/runs/{run}", replica=replica)
+            self.assertEqual(value.get("status"), "running", "cancellation positive control requires a live run")
+            self.assertEqual(
+                value.get("metadata", {}).get("_runkite_attempt_generation"),
+                generation,
+                "cancellation positive control requires the same live generation",
+            )
+
+        assert_live()
+        wait_for_owned_sandbox_presence(self.cli, self.gateway, sandbox, self.environment)
+        assert_live()
+        # Only the first cancel claims a live-workload control. A repeated API
+        # request retains the existing terminal-settlement idempotency probe.
+        for _ in range(repeats):
+            self.request(f"/threads/{thread}/runs/{run}/cancel", {}, replica=replica)
+        final = self.request(f"/threads/{thread}/runs/{run}", replica=replica)
+        self.assertEqual(final["status"], "interrupted")
+        elapsed = wait_for_owned_sandbox_absence(self.cli, self.gateway, sandbox, self.environment)
+        self.runtime_names.discard(sandbox)
+        self.evidence["cancellation_observations"].append(
+            {
+                "run_id": run,
+                "generation": generation,
+                "sandbox": sandbox,
+                "observed_present_before_cancel": True,
+                "run_live_before_presence": True,
+                "run_live_after_presence": True,
+                "generation_matched_before_cancel": True,
+                "workload_activity_observed": True,
+                "activity_prompt_tokens": prompt_tokens,
+                "activity_completion_tokens": completion_tokens,
+                "observed_absent_before_teardown": True,
+                "method": "read_only_selector",
+                "elapsed_seconds": elapsed,
+            }
+        )
+        return final
+
+    def qualify_live_generation_denials(self, thread, run, report):
+        """Current live controls isolate generation mismatch from terminal denial."""
+        generation = report["reported_generation"]
+        self.assertGreater(generation, 0, "generation probe requires a current positive attempt")
+        client = self.client_for(self.parent_identity)
+        base = self.bases[1]
+        current = self.bound_headers(run, generation)
+        mismatched = self.bound_headers(run, generation - 1)
+
+        def assert_live():
+            value = self.request(f"/threads/{thread}/runs/{run}", replica=1)
+            self.assertEqual(value["status"], "running", "generation probe requires a live run")
+            self.assertEqual(value["metadata"]["_runkite_attempt_generation"], generation)
+
+        assert_live()
+        usage_url = base + f"/internal/runs/{run}/usage"
+        positive = client.get(usage_url, headers=current)
+        self.assertEqual(positive.status_code, 200, "current live usage read control failed")
+        snapshot = positive.json()["snapshot"]
+        self.assertEqual(snapshot, report, "live usage changed before the generation probe")
+        body = {
+            key: value
+            for key, value in snapshot.items()
+            if key
+            in {
+                "schema_version",
+                "sequence",
+                "status",
+                "complete",
+                "prompt_tokens",
+                "completion_tokens",
+                "model",
+                "cost_usd",
+            }
+        }
+        positive_write = client.post(usage_url, headers=current, json=body)
+        self.assertEqual(positive_write.status_code, 200, "current idempotent usage control failed")
+        self.assertEqual(positive_write.json()["snapshot"], snapshot)
+        negative_usage = client.post(usage_url, headers=mismatched, json=body)
+        self.assertEqual(negative_usage.status_code, 403, "mismatched generation obtained live usage authority")
+        self.assertEqual(negative_usage.json().get("reason_code"), "run_generation_mismatch")
+
+        checkpoint_url = base + f"/internal/checkpoints/{thread}/adapter-state"
+        checkpoint = client.get(checkpoint_url, headers=current)
+        self.assertEqual(checkpoint.status_code, 200, "current live checkpoint control failed")
+        etag = checkpoint.headers.get("ETag", "")
+        self.assertRegex(etag, r'^"[1-9][0-9]{0,18}"$', "checkpoint control requires a strong version")
+        self.assertLessEqual(int(etag[1:-1]), (1 << 63) - 1)
+        self.assertEqual(checkpoint.headers.get("X-Runkite-Checkpoint-Framework"), "isolated-v1")
+        self.assertEqual(
+            checkpoint.json()["intent"]["generation"],
+            generation,
+            "checkpoint control requires the actual current worker's committed intent",
+        )
+        self.assertTrue(
+            checkpoint.json()["intent"].get("run_id") == run
+            and checkpoint.json()["intent"].get("run_incarnation_id") == current["X-Runkite-Run-Incarnation"],
+            "checkpoint control belongs to another original record",
+        )
+        negative_checkpoint = client.put(
+            checkpoint_url,
+            headers={
+                **mismatched,
+                "If-Match": etag,
+                "X-Runkite-Checkpoint-Framework": "isolated-v1",
+                "Content-Type": "application/octet-stream",
+            },
+            content=checkpoint.content,
+        )
+        self.assertEqual(
+            negative_checkpoint.status_code, 403, "mismatched generation obtained checkpoint write authority"
+        )
+        self.assertEqual(negative_checkpoint.json().get("reason_code"), "run_generation_mismatch")
+        after_checkpoint = client.get(checkpoint_url, headers=current)
+        self.assertEqual(after_checkpoint.status_code, 200)
+        self.assertEqual(after_checkpoint.headers.get("ETag"), etag)
+        self.assertEqual(after_checkpoint.content, checkpoint.content)
+        after_usage = client.get(usage_url, headers=current)
+        self.assertEqual(after_usage.status_code, 200)
+        self.assertEqual(after_usage.json()["snapshot"], snapshot)
+        assert_live()
+        self.evidence["live_generation_observations"].append(
+            {
+                "run_id": run,
+                "generation": generation,
+                "mismatched_generation": generation - 1,
+                "live_before": True,
+                "live_after": True,
+                "usage_current_get": 200,
+                "usage_idempotent_post": 200,
+                "usage_mismatched_post": 403,
+                "checkpoint_current_get": 200,
+                "checkpoint_mismatched_put": 403,
+                "checkpoint_unchanged": True,
+                "usage_unchanged": True,
+            }
+        )
 
     def qualify_replicated_usage(self):
         self.evidence["cases"].append(
@@ -659,20 +979,10 @@ class ManagedIsolatedE2E(unittest.TestCase):
                 },
             )
 
-            def committed_usage(run=run, thread=thread):
-                current = self.request(f"/threads/{thread}/runs/{run}")
-                generation = current.get("metadata", {}).get("_runkite_attempt_generation", 1)
-                response = self.client_for(self.parent_identity).get(
-                    self.base + f"/internal/runs/{run}/usage", headers=self.bound_headers(run, generation)
-                )
-                if response.status_code != 200:
-                    return None
-                snapshot = response.json()["snapshot"]
-                return snapshot if snapshot and snapshot.get("prompt_tokens") == 7 else None
-
-            report = wait_for("durable partial usage acknowledgement", committed_usage, timeout=120)
+            report = self.wait_for_partial_usage(thread, run, 7, 3)
             generation = report["reported_generation"]
             self.assertFalse(report["complete"])
+            self.qualify_live_generation_denials(thread, run, report)
             intent = self.state(thread, run)
             self.runtime_names.add(intent["intent"]["sandbox"])
             # A separately authorized member of the same pool must not borrow
@@ -682,10 +992,12 @@ class ManagedIsolatedE2E(unittest.TestCase):
                 self.bases[1] + f"/internal/runs/{run}/usage", headers=self.bound_headers(run, generation)
             )
             self.assertEqual(denied.status_code, 403)
+            self.assertEqual(denied.json().get("reason_code"), "workload_owner_mismatch")
             rotated = self.client_for("rotated-" + self.parent_identity).get(
                 self.bases[1] + f"/internal/runs/{run}/usage", headers=self.bound_headers(run, generation)
             )
             self.assertEqual(rotated.status_code, 403)
+            self.assertEqual(rotated.json().get("reason_code"), "workload_owner_mismatch")
             without_identity = ssl.create_default_context(cafile=str(self.pki / "ca.pem"))
             with httpx.Client(verify=without_identity, timeout=5, trust_env=False) as unbound:
                 with self.assertRaises(httpx.HTTPError):
@@ -698,10 +1010,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
             self.assertEqual(authorized.status_code, 200, "peer probes must target a still-current owned attempt")
 
             self.planes[0].stop(kill=True)
-            for _ in range(2):
-                self.request(f"/threads/{thread}/runs/{run}/cancel", {}, replica=1)
-            final = self.request(f"/threads/{thread}/runs/{run}", replica=1)
-            self.assertEqual(final["status"], "interrupted")
+            final = self.cancel_active_workload(thread, run, report, intent, 7, 3, replica=1, repeats=2)
             value = final["output"]["usage"]
             self.assertEqual((value["prompt_tokens"], value["completion_tokens"]), (7, 3))
             self.assertTrue(value["unmetered"])
@@ -743,7 +1052,7 @@ class ManagedIsolatedE2E(unittest.TestCase):
                     self.evidence.setdefault("unconfirmed_cleanup", []).append(name)
                     cleanup_errors.append(name)
         self.evidence["logs"] = str(self.directory)
-        output = Path(os.environ.get("RUNKITE_TEST_ISOLATED_OUTPUT", str(self.directory / "evidence.json")))
+        output = Path(self.inputs.get("RUNKITE_TEST_ISOLATED_OUTPUT", str(self.directory / "evidence.json")))
         output.write_text(json.dumps(self.evidence, indent=2) + "\n")
         if cleanup_errors:
             self.fail("Owned runtime cleanup was not confirmed; inspect retained fixture evidence")

@@ -4,6 +4,16 @@ Availability: v0.8.0, not a change to published v0.7.0 artifacts. The external
 JSONL profile remains experimental. This contract
 records claims from a configured workload; it does not verify a provider bill.
 
+Unreleased current source additionally fences terminal accounting and hold
+mutations against the original stored record. Apply Postgres/SQLite migration 23
+or MySQL migration 24 after backing up and draining all writers, and deploy
+matching planes and runners. Existing unbound ledger rows are retained; a
+same-public-ID collision requires explicit accounting reconciliation and fresh
+operation IDs for intentional new work. See the
+[finalization contract](atomic-results-and-identities.md#original-record-finalization-unreleased)
+and [upgrade procedure](../ops-runbook.md#assignment-identity-upgrade). The
+historical qualification below does not qualify this later fence.
+
 ## The caller and the boundary
 
 An operator using the external workload profile needs to distinguish a measured

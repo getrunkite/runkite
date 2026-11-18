@@ -31,12 +31,12 @@ type Server struct {
 	broker             transport.EventBroker
 	cancelBus          transport.CancelBroker
 	statusCallback     func(runID, status, errorMsg string)
-	attemptCallback    func(context.Context, string, int64) (bool, error)
+	attemptCallback    func(context.Context, string, string, int64) (bool, error)
 	completionCallback func(context.Context, *state.RunCompletion) (bool, error)
 
 	mu       sync.Mutex
-	watchers map[string][]chan string      // runner_kind -> channels carrying runID
-	runDone  map[string]context.CancelFunc // runID -> cancel func for the cancel-watcher goroutine
+	watchers map[string][]chan *pb.CancelSignal // runner_kind -> channels carrying runID
+	runDone  map[recordKey][]context.CancelFunc // runID -> cancel func for the cancel-watcher goroutine
 }
 
 // NewServer creates a bridge server backed by the given queue, broker, and cancel bus.
@@ -46,24 +46,24 @@ func NewServer(queue transport.JobQueue, broker transport.EventBroker, cancelBus
 		broker:         broker,
 		cancelBus:      cancelBus,
 		statusCallback: onStatus,
-		watchers:       make(map[string][]chan string),
-		runDone:        make(map[string]context.CancelFunc),
+		watchers:       make(map[string][]chan *pb.CancelSignal),
+		runDone:        make(map[recordKey][]context.CancelFunc),
 	}
 }
 
 // SetRunLifecycle attaches durable attempt fencing and completion persistence.
-func (s *Server) SetRunLifecycle(attempt func(context.Context, string, int64) (bool, error), complete func(context.Context, *state.RunCompletion) (bool, error)) {
+func (s *Server) SetRunLifecycle(attempt func(context.Context, string, string, int64) (bool, error), complete func(context.Context, *state.RunCompletion) (bool, error)) {
 	s.attemptCallback = attempt
 	s.completionCallback = complete
 }
 
-func (s *Server) addWatcher(kind string, ch chan string) {
+func (s *Server) addWatcher(kind string, ch chan *pb.CancelSignal) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.watchers[kind] = append(s.watchers[kind], ch)
 }
 
-func (s *Server) removeWatcher(kind string, ch chan string) {
+func (s *Server) removeWatcher(kind string, ch chan *pb.CancelSignal) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	watchers := s.watchers[kind]
@@ -75,31 +75,42 @@ func (s *Server) removeWatcher(kind string, ch chan string) {
 	}
 }
 
-func (s *Server) notifyWatchers(kind, runID string) {
+func (s *Server) notifyWatchers(kind, runID, incarnation string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, ch := range s.watchers[kind] {
 		select {
-		case ch <- runID:
+		case ch <- &pb.CancelSignal{RunId: runID, RunIncarnationId: incarnation}:
 		default:
 		}
 	}
 }
 
 // cleanupRun cancels the cancel-watcher goroutine for a completed run.
-func (s *Server) cleanupRun(runID string) {
+func (s *Server) cleanupRun(runID, incarnation string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cancel, ok := s.runDone[runID]; ok {
-		cancel()
-		delete(s.runDone, runID)
+	key := recordKey{runID, incarnation}
+	if cancels, ok := s.runDone[key]; ok {
+		for _, cancel := range cancels {
+			cancel()
+		}
+		delete(s.runDone, key)
 	}
 }
 
+type recordKey struct{ runID, incarnation string }
+
 // GetJob implements the long-poll pattern: blocks until a job is available.
 func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobResponse, error) {
+	if req.AssignmentIdentityVersion != 1 {
+		return nil, status.Error(codes.FailedPrecondition, "assignment identity protocol version 1 required")
+	}
 	if err := requireRunnerKind(ctx, req.RunnerKind); err != nil {
 		return nil, err
+	}
+	if s.attemptCallback == nil || s.completionCallback == nil {
+		return nil, status.Error(codes.FailedPrecondition, "durable assignment identity lifecycle required")
 	}
 	timeout := time.Duration(req.TimeoutSeconds) * time.Second
 	if timeout <= 0 {
@@ -124,10 +135,14 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 		return &pb.GetJobResponse{HasJob: false}, nil
 	}
 
+	if !auth.ValidRunIncarnation(job.RunIncarnationID) {
+		return nil, status.Error(codes.FailedPrecondition, "queued assignment has no original record identity; drain legacy jobs before upgrade")
+	}
+
 	// Client already gone while we were blocked in Dequeue — put the job
 	// back so a live runner can take it (zombie GetJob recovery).
 	if ctx.Err() != nil {
-		_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.Generation)
+		_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.RunIncarnationID, job.Generation)
 		return nil, ctx.Err()
 	}
 	// A backend routing/filter collision must not expose another kind's input
@@ -135,20 +150,20 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	if err := requireAssignmentAuthority(ctx, job); err != nil {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if nackErr := s.queue.Nack(transport.TrustedQueueContext(cleanupCtx), job.RunID, job.Generation); nackErr != nil {
+		if nackErr := s.queue.Nack(transport.TrustedQueueContext(cleanupCtx), job.RunID, job.RunIncarnationID, job.Generation); nackErr != nil {
 			return nil, status.Error(codes.Unavailable, "failed to return unauthorized assignment")
 		}
 		return nil, err
 	}
 
 	if s.attemptCallback != nil {
-		accepted, err := s.attemptCallback(ctx, job.RunID, job.Generation)
+		accepted, err := s.attemptCallback(ctx, job.RunID, job.RunIncarnationID, job.Generation)
 		if err != nil {
-			_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.Generation)
+			_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.RunIncarnationID, job.Generation)
 			return nil, status.Error(codes.Unavailable, "failed to persist dispatch attempt")
 		}
 		if !accepted {
-			_, err := s.queue.Ack(ctx, job.RunID, job.Generation)
+			_, err := s.queue.Ack(ctx, job.RunID, job.RunIncarnationID, job.Generation)
 			if err != nil {
 				return nil, status.Error(codes.Unavailable, "failed to discard completed assignment")
 			}
@@ -158,7 +173,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 
 	data, err := json.Marshal(job)
 	if err != nil {
-		_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.Generation)
+		_ = s.queue.Nack(transport.TrustedQueueContext(context.Background()), job.RunID, job.RunIncarnationID, job.Generation)
 		return nil, err
 	}
 
@@ -184,16 +199,14 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 	// of the "Redis transport gets dramatically slower under
 	// concurrency" finding in bench/REPORT.md.
 	watchCtx, watchCancel := context.WithCancel(context.Background())
-	cancelCh, subErr := s.cancelBus.SubscribeCancel(watchCtx, runID)
+	cancelCh, subErr := s.cancelBus.SubscribeCancel(watchCtx, runID, job.RunIncarnationID)
 	if subErr != nil {
 		slog.Error("failed to subscribe to cancel for dispatched run", "run_id", runID, "error", subErr)
 		watchCancel()
 	} else {
 		s.mu.Lock()
-		if old := s.runDone[runID]; old != nil {
-			old()
-		}
-		s.runDone[runID] = watchCancel
+		key := recordKey{runID, job.RunIncarnationID}
+		s.runDone[key] = append(s.runDone[key], watchCancel)
 		s.mu.Unlock()
 
 		go func() {
@@ -201,7 +214,7 @@ func (s *Server) GetJob(ctx context.Context, req *pb.GetJobRequest) (*pb.GetJobR
 			select {
 			case <-cancelCh:
 				slog.Info("cancel signal received for dispatched run", "run_id", runID)
-				s.notifyWatchers(watcherKind, runID)
+				s.notifyWatchers(watcherKind, runID, job.RunIncarnationID)
 			case <-watchCtx.Done():
 				// Run completed normally; goroutine exits cleanly.
 			}
@@ -226,12 +239,15 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 		if err != nil {
 			return err
 		}
-		_, err = s.requireRunOwner(stream.Context(), msg.RunId)
+		_, matches, err := s.requireRunOwner(stream.Context(), msg.RunId, msg.RunIncarnationId)
 		if err != nil {
 			return err
 		}
+		if !matches {
+			continue
+		}
 		lastRunID = msg.RunId
-		current, err := s.queue.Renew(stream.Context(), msg.RunId, msg.Generation)
+		current, err := s.queue.Renew(stream.Context(), msg.RunId, msg.RunIncarnationId, msg.Generation)
 		if err != nil {
 			return status.Error(codes.Unavailable, "failed to fence run event")
 		}
@@ -244,10 +260,11 @@ func (s *Server) StreamEvents(stream pb.RunnerService_StreamEventsServer) error 
 			return status.Error(codes.InvalidArgument, "invalid run event JSON")
 		}
 		event.Generation = msg.Generation
+		event.RunIncarnationID = msg.RunIncarnationId
 		if event.Generation > 1 {
 			event.EventID = fmt.Sprintf("%s:g%d", event.EventID, event.Generation)
 		}
-		if err := s.broker.Publish(stream.Context(), msg.RunId, &event); err != nil {
+		if err := s.broker.Publish(stream.Context(), msg.RunId, msg.RunIncarnationId, &event); err != nil {
 			slog.Error("failed to publish event", "run_id", lastRunID, "error", err)
 			return status.Error(codes.Unavailable, "failed to persist run event")
 		}
@@ -267,15 +284,18 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 	if !state.TerminalRunStatus(models.RunStatus(req.Status)) {
 		return nil, status.Error(codes.InvalidArgument, "invalid terminal run status")
 	}
-	assignment, err := s.requireRunOwner(ctx, req.RunId)
+	assignment, matches, err := s.requireRunOwner(ctx, req.RunId, req.RunIncarnationId)
 	if err != nil {
 		return nil, err
+	}
+	if assignment != nil && !matches {
+		return &pb.ReportStatusResponse{Ok: true, Superseded: true}, nil
 	}
 	if assignment == nil && s.completionCallback == nil {
 		return &pb.ReportStatusResponse{Ok: true, Superseded: true}, nil
 	}
 	if assignment != nil {
-		current, err := s.queue.Renew(ctx, req.RunId, req.Generation)
+		current, err := s.queue.Renew(ctx, req.RunId, req.RunIncarnationId, req.Generation)
 		if err != nil {
 			return nil, status.Error(codes.Unavailable, "failed to fence run completion")
 		}
@@ -284,7 +304,7 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 		}
 	}
 	if s.completionCallback != nil {
-		accepted, err := s.completionCallback(ctx, &state.RunCompletion{RunID: req.RunId, Generation: req.Generation, Status: models.RunStatus(req.Status), Error: req.ErrorMessage, RunnerKind: authenticatedRunner(ctx), ReplayOnly: assignment == nil})
+		accepted, err := s.completionCallback(ctx, &state.RunCompletion{RunID: req.RunId, ExpectedIncarnationID: req.RunIncarnationId, Generation: req.Generation, Status: models.RunStatus(req.Status), Error: req.ErrorMessage, RunnerKind: authenticatedRunner(ctx), ReplayOnly: assignment == nil})
 		if err != nil {
 			slog.Error("durable completion failed", "run_id", req.RunId, "error", err)
 			return nil, status.Error(codes.Unavailable, "failed to persist run completion")
@@ -292,15 +312,15 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 		if !accepted {
 			return &pb.ReportStatusResponse{Ok: true, Superseded: true}, nil
 		}
-	} else if s.statusCallback != nil {
-		s.statusCallback(req.RunId, req.Status, req.ErrorMessage)
+	} else {
+		return nil, status.Error(codes.FailedPrecondition, "durable assignment identity lifecycle required")
 	}
 	if assignment != nil {
-		if _, err := s.queue.Ack(ctx, req.RunId, req.Generation); err != nil {
+		if _, err := s.queue.Ack(ctx, req.RunId, req.RunIncarnationId, req.Generation); err != nil {
 			return nil, status.Error(codes.Unavailable, "failed to acknowledge persisted completion")
 		}
 	}
-	s.cleanupRun(req.RunId)
+	s.cleanupRun(req.RunId, req.RunIncarnationId)
 	return &pb.ReportStatusResponse{Ok: true}, nil
 }
 
@@ -323,10 +343,12 @@ func (s *Server) ReportStatus(ctx context.Context, req *pb.ReportStatusRequest) 
 // should stop, delivered at the next ~2s heartbeat tick rather than
 // only once it eventually finishes and calls ReportStatus.
 func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.HeartbeatResponse, error) {
-	if _, err := s.requireRunOwner(ctx, req.RunId); err != nil {
+	if _, matches, err := s.requireRunOwner(ctx, req.RunId, req.RunIncarnationId); err != nil {
 		return nil, err
+	} else if !matches {
+		return &pb.HeartbeatResponse{Ok: true, Superseded: true}, nil
 	}
-	current, err := s.queue.Renew(ctx, req.RunId, req.Generation)
+	current, err := s.queue.Renew(ctx, req.RunId, req.RunIncarnationId, req.Generation)
 	if err != nil {
 		slog.Error("failed to renew heartbeat lease", "run_id", req.RunId, "error", err)
 		return &pb.HeartbeatResponse{Ok: true}, nil
@@ -342,12 +364,15 @@ func (s *Server) Heartbeat(ctx context.Context, req *pb.HeartbeatRequest) (*pb.H
 // once at startup. The bridge sends a CancelSignal whenever a run dispatched
 // to this runner_kind is cancelled.
 func (s *Server) WatchCancels(req *pb.WatchCancelsRequest, stream pb.RunnerService_WatchCancelsServer) error {
+	if req.AssignmentIdentityVersion != 1 {
+		return status.Error(codes.FailedPrecondition, "assignment identity protocol version 1 required")
+	}
 	if err := requireRunnerKind(stream.Context(), req.RunnerKind); err != nil {
 		return err
 	}
 	slog.Info("runner watching for cancels", "runner_kind", req.RunnerKind)
 
-	ch := make(chan string, 64)
+	ch := make(chan *pb.CancelSignal, 64)
 	watcherKind := workloadWatcherKey(stream.Context(), req.RunnerKind)
 	s.addWatcher(watcherKind, ch)
 	defer s.removeWatcher(watcherKind, ch)
@@ -364,11 +389,12 @@ func (s *Server) WatchCancels(req *pb.WatchCancelsRequest, stream pb.RunnerServi
 			return nil
 		case <-expiry:
 			return status.Error(codes.Unauthenticated, "workload identity expired")
-		case runID := <-ch:
+		case signal := <-ch:
+			runID := signal.RunId
 			if err := requireRunnerKind(stream.Context(), req.RunnerKind); err != nil {
 				return err
 			}
-			if err := stream.Send(&pb.CancelSignal{RunId: runID}); err != nil {
+			if err := stream.Send(signal); err != nil {
 				slog.Error("failed to send cancel signal", "run_id", runID, "error", err)
 				return err
 			}
@@ -395,23 +421,29 @@ func requireRunnerKind(ctx context.Context, kind string) error {
 	return nil
 }
 
-func (s *Server) requireRunOwner(ctx context.Context, runID string) (*transport.RunAssignment, error) {
+func (s *Server) requireRunOwner(ctx context.Context, runID, incarnation string) (*transport.RunAssignment, bool, error) {
+	if !auth.ValidRunIncarnation(incarnation) {
+		return nil, false, status.Error(codes.FailedPrecondition, "original run record identity required")
+	}
 	if err := auth.RequireWorkloadAuthority(ctx); err != nil {
-		return nil, status.Error(codes.Unauthenticated, "workload identity expired or retired")
+		return nil, false, status.Error(codes.Unauthenticated, "workload identity expired or retired")
 	}
 	if identity := auth.WorkloadIdentityFromContext(ctx); identity != nil && !identity.ValidAt(time.Now()) {
-		return nil, status.Error(codes.Unauthenticated, "workload identity expired")
+		return nil, false, status.Error(codes.Unauthenticated, "workload identity expired")
 	}
 	assignment, err := s.queue.LookupInflight(ctx, runID)
 	if err != nil {
-		return nil, status.Error(codes.Unavailable, "failed to resolve run assignment")
+		return nil, false, status.Error(codes.Unavailable, "failed to resolve run assignment")
 	}
 	if assignment != nil {
+		if assignment.RunIncarnationID == "" || assignment.RunIncarnationID != incarnation {
+			return assignment, false, nil
+		}
 		if err := requireAssignmentAuthority(ctx, assignment); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-	return assignment, nil
+	return assignment, assignment != nil, nil
 }
 
 func requireAssignmentAuthority(ctx context.Context, assignment *transport.RunAssignment) error {

@@ -78,9 +78,9 @@ func TestRedisBroker_StreamExpiresAfterTerminalEvent(t *testing.T) {
 	broker := redistransport.NewBroker(rdb)
 	ctx := context.Background()
 	runID := "run-ttl-001"
-	streamKey := "rk:events:" + runID
+	streamKey := "rk:events:" + transport.RunRecordKey(runID, "")
 
-	if err := broker.Publish(ctx, runID, &transport.RunEvent{Seq: 1, Method: "start"}); err != nil {
+	if err := broker.Publish(ctx, runID, "", &transport.RunEvent{Seq: 1, Method: "start"}); err != nil {
 		t.Fatalf("Publish(start) failed: %v", err)
 	}
 	// A non-terminal event sets the longer "hung run" safety-net TTL
@@ -92,7 +92,7 @@ func TestRedisBroker_StreamExpiresAfterTerminalEvent(t *testing.T) {
 		t.Errorf("expected the non-terminal event's longer safety-net TTL before the terminal event, got ttl=%v", ttl)
 	}
 
-	if err := broker.Publish(ctx, runID, &transport.RunEvent{Seq: 2, Method: "end"}); err != nil {
+	if err := broker.Publish(ctx, runID, "", &transport.RunEvent{Seq: 2, Method: "end"}); err != nil {
 		t.Fatalf("Publish(end) failed: %v", err)
 	}
 
@@ -122,9 +122,9 @@ func TestRedisBroker_NonTerminalEventStillSetsATTL(t *testing.T) {
 	broker := redistransport.NewBroker(rdb)
 	ctx := context.Background()
 	runID := "run-ttl-hung-001"
-	streamKey := "rk:events:" + runID
+	streamKey := "rk:events:" + transport.RunRecordKey(runID, "")
 
-	if err := broker.Publish(ctx, runID, &transport.RunEvent{Seq: 1, Method: "start"}); err != nil {
+	if err := broker.Publish(ctx, runID, "", &transport.RunEvent{Seq: 1, Method: "start"}); err != nil {
 		t.Fatalf("Publish(start) failed: %v", err)
 	}
 
@@ -151,12 +151,12 @@ func TestRedisBroker_CloseAlsoExpiresStream(t *testing.T) {
 	broker := redistransport.NewBroker(rdb)
 	ctx := context.Background()
 	runID := "run-ttl-close-001"
-	streamKey := "rk:events:" + runID
+	streamKey := "rk:events:" + transport.RunRecordKey(runID, "")
 
-	if err := broker.Publish(ctx, runID, &transport.RunEvent{Seq: 1, Method: "start"}); err != nil {
+	if err := broker.Publish(ctx, runID, "", &transport.RunEvent{Seq: 1, Method: "start"}); err != nil {
 		t.Fatalf("Publish(start) failed: %v", err)
 	}
-	if err := broker.Close(runID); err != nil {
+	if err := broker.Close(runID, ""); err != nil {
 		t.Fatalf("Close failed: %v", err)
 	}
 
@@ -201,7 +201,7 @@ func TestRedisPoisonPillPreservesColonRunIDs(t *testing.T) {
 					t.Fatalf("retained lease: assignment=%+v err=%v", live, err)
 				}
 			}
-			if accepted, err := q.Ack(ctx, job.RunID, 2); err != nil || !accepted {
+			if accepted, err := q.Ack(ctx, job.RunID, "", 2); err != nil || !accepted {
 				t.Fatalf("exact generation Ack: accepted=%t err=%v", accepted, err)
 			}
 			if n, dead, err := q.ReclaimStale(ctx, -time.Second, 2); err != nil || n != 0 || len(dead) != 0 {
@@ -243,7 +243,7 @@ func TestRedisReclaimRetainsAssignmentWhenReadyQueueWriteFails(t *testing.T) {
 	if after, err := rdb.HGet(ctx, "rk:inflight:data", job.RunID).Result(); err != nil || after != before {
 		t.Fatalf("recoverable assignment was changed or removed: payload=%q err=%v", after, err)
 	}
-	if current, err := q.Renew(ctx, job.RunID, 1); err != nil || !current {
+	if current, err := q.Renew(ctx, job.RunID, "", 1); err != nil || !current {
 		t.Fatalf("failed reclaim advanced or removed the original fence: current=%t err=%v", current, err)
 	}
 	if err := rdb.Del(ctx, "rk:queue:kind").Err(); err != nil {
@@ -256,7 +256,7 @@ func TestRedisReclaimRetainsAssignmentWhenReadyQueueWriteFails(t *testing.T) {
 	if err != nil || assignment == nil || assignment.Generation != 2 || string(assignment.Input) != string(job.Input) {
 		t.Fatalf("repaired dispatch changed payload or generation: assignment=%+v err=%v", assignment, err)
 	}
-	if accepted, err := q.Ack(ctx, job.RunID, 2); err != nil || !accepted {
+	if accepted, err := q.Ack(ctx, job.RunID, "", 2); err != nil || !accepted {
 		t.Fatalf("repaired generation Ack: accepted=%t err=%v", accepted, err)
 	}
 }

@@ -22,7 +22,8 @@ type Queue struct {
 	mu       sync.Mutex
 	jobs     map[string]chan *transport.RunAssignment // keyed by runner_kind
 	canceled map[string]bool                          // run_ids that have been canceled
-	inflight map[string]*inflightEntry                // run_id -> dequeued but not yet Ack'd
+	deferred map[string][]*transport.RunAssignment
+	inflight map[string]*inflightEntry // run_id -> dequeued but not yet Ack'd
 }
 
 // NewQueue creates a new in-memory queue.
@@ -54,7 +55,7 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 	// Keep the queue's dispatch generation independent of caller-owned copies.
 	assignment := *job
 	q.mu.Lock()
-	if q.canceled[job.RunID] {
+	if q.canceled[transport.RunRecordKey(job.RunID, job.RunIncarnationID)] {
 		q.mu.Unlock()
 		return nil // silently drop canceled jobs
 	}
@@ -73,32 +74,75 @@ func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error
 // Canceled jobs are silently discarded and the wait continues.
 func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Duration) (*transport.RunAssignment, error) {
 	ch := q.getChannel(runnerKind)
-
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
-
+	q.mu.Lock()
+	deferredRemaining := len(q.deferred[runnerKind])
+	q.mu.Unlock()
+	blocked := false
 	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		select {
-		case job := <-ch:
-			q.mu.Lock()
-			if q.canceled[job.RunID] {
-				q.mu.Unlock()
-				continue // skip canceled job, keep waiting
-			}
-			job.WorkloadOwner = transport.WorkloadIdentityFromContext(ctx)
-			q.inflight[job.RunID] = &inflightEntry{job: job, dequeuedAt: time.Now()}
-			q.mu.Unlock()
-			assignment := *job
-			if job.WorkloadOwner != nil {
-				owner := *job.WorkloadOwner
-				assignment.WorkloadOwner = &owner
-			}
-			return &assignment, nil
 		case <-timer.C:
 			return nil, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
+		default:
 		}
+		var job *transport.RunAssignment
+		q.mu.Lock()
+		if pending := q.deferred[runnerKind]; deferredRemaining > 0 && len(pending) > 0 {
+			job = pending[0]
+			q.deferred[runnerKind] = pending[1:]
+			deferredRemaining--
+		}
+		q.mu.Unlock()
+		if job == nil {
+			if blocked {
+				// Inspect each deferred candidate at most once per call, then
+				// try ready work without waiting or spinning on the collision.
+				select {
+				case job = <-ch:
+				default:
+					return nil, nil
+				}
+			} else {
+				select {
+				case job = <-ch:
+				case <-timer.C:
+					return nil, nil
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
+		}
+		q.mu.Lock()
+		if q.canceled[transport.RunRecordKey(job.RunID, job.RunIncarnationID)] {
+			q.mu.Unlock()
+			continue
+		}
+		if existing := q.inflight[job.RunID]; existing != nil {
+			if existing.job.RunIncarnationID == job.RunIncarnationID && existing.job.Generation >= job.Generation {
+				q.mu.Unlock()
+				continue
+			}
+			if q.deferred == nil {
+				q.deferred = make(map[string][]*transport.RunAssignment)
+			}
+			q.deferred[runnerKind] = append(q.deferred[runnerKind], job)
+			q.mu.Unlock()
+			blocked = true
+			continue
+		}
+		job.WorkloadOwner = transport.WorkloadIdentityFromContext(ctx)
+		q.inflight[job.RunID] = &inflightEntry{job: job, dequeuedAt: time.Now()}
+		q.mu.Unlock()
+		assignment := *job
+		if job.WorkloadOwner != nil {
+			owner := *job.WorkloadOwner
+			assignment.WorkloadOwner = &owner
+		}
+		return &assignment, nil
 	}
 }
 
@@ -117,19 +161,19 @@ func workloadMatches(ctx context.Context, entry *inflightEntry) bool {
 
 // generationMatches requires the exact dispatch generation for Ack, Renew and Nack.
 // Zero is a legacy generation, never a wildcard for a newer attempt.
-func generationMatches(entry *inflightEntry, generation int64) bool {
-	return entry.job.Generation == generation
+func generationMatches(entry *inflightEntry, incarnation string, generation int64) bool {
+	return entry.job.Generation == generation && entry.job.RunIncarnationID == incarnation
 }
 
 // Ack removes a job from inflight tracking after the runner has claimed
 // it, fenced by generation -- see transport.JobQueue's Ack doc comment
 // for the full rationale. accepted=false (not an error) if nothing is
 // tracked for runID, or a newer generation has already superseded it.
-func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
+func (q *Queue) Ack(ctx context.Context, runID, incarnation string, generation int64) (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	entry, ok := q.inflight[runID]
-	if !ok || !generationMatches(entry, generation) || !workloadMatches(ctx, entry) {
+	if !ok || !generationMatches(entry, incarnation, generation) || !workloadMatches(ctx, entry) {
 		return false, nil
 	}
 	delete(q.inflight, runID)
@@ -141,11 +185,11 @@ func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, 
 // heartbeat mechanism and fencing this backs. current=false (not an
 // error) if the job is no longer in-flight (already Ack'd/reclaimed/
 // canceled) or has been superseded by a newer generation.
-func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool, error) {
+func (q *Queue) Renew(ctx context.Context, runID, incarnation string, generation int64) (bool, error) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	entry, ok := q.inflight[runID]
-	if !ok || !generationMatches(entry, generation) || !workloadMatches(ctx, entry) {
+	if !ok || !generationMatches(entry, incarnation, generation) || !workloadMatches(ctx, entry) {
 		return false, nil
 	}
 	entry.dequeuedAt = time.Now()
@@ -169,11 +213,11 @@ func (q *Queue) LookupInflight(ctx context.Context, runID string) (*transport.Ru
 }
 
 // Nack re-enqueues a previously dequeued job so another runner can take it.
-func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
+func (q *Queue) Nack(ctx context.Context, runID, incarnation string, generation int64) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	entry, ok := q.inflight[runID]
-	if !ok || !generationMatches(entry, generation) || !workloadMatches(ctx, entry) {
+	if !ok || !generationMatches(entry, incarnation, generation) || !workloadMatches(ctx, entry) {
 		return nil
 	}
 	assignment := *entry.job
@@ -196,7 +240,7 @@ func (q *Queue) enqueueReadyLocked(ctx context.Context, job *transport.RunAssign
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if q.canceled[job.RunID] {
+	if q.canceled[transport.RunRecordKey(job.RunID, job.RunIncarnationID)] {
 		return nil
 	}
 	assignment := *job
@@ -210,11 +254,13 @@ func (q *Queue) enqueueReadyLocked(ctx context.Context, job *transport.RunAssign
 
 // Cancel marks a run_id as canceled. Enqueued jobs with this ID are skipped
 // on Dequeue; new Enqueue calls for the ID are dropped.
-func (q *Queue) Cancel(ctx context.Context, runID string) error {
+func (q *Queue) Cancel(ctx context.Context, runID, incarnation string) error {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.canceled[runID] = true
-	delete(q.inflight, runID)
+	q.canceled[transport.RunRecordKey(runID, incarnation)] = true
+	if entry := q.inflight[runID]; entry != nil && entry.job.RunIncarnationID == incarnation {
+		delete(q.inflight, runID)
+	}
 	return nil
 }
 
@@ -225,6 +271,9 @@ func (q *Queue) Len(ctx context.Context) (int64, error) {
 	var total int64
 	for _, ch := range q.jobs {
 		total += int64(len(ch))
+	}
+	for _, pending := range q.deferred {
+		total += int64(len(pending))
 	}
 	return total, nil
 }
@@ -251,10 +300,11 @@ func (q *Queue) ReclaimStale(ctx context.Context, maxAge time.Duration, maxRetri
 			newGen := entry.job.Generation + 1
 			if maxRetries > 0 && newGen > int64(maxRetries) {
 				dead = append(dead, transport.PoisonPill{
-					RunID:      runID,
-					Generation: newGen,
-					AgentID:    entry.job.GraphID,
-					TenantID:   entry.job.TenantID,
+					RunID:            runID,
+					RunIncarnationID: entry.job.RunIncarnationID,
+					Generation:       newGen,
+					AgentID:          entry.job.GraphID,
+					TenantID:         entry.job.TenantID,
 				})
 				// Keep this exact dispatch recoverable until its terminal
 				// state is durable. The reaper Acks newGen-1 after persistence;
@@ -294,7 +344,13 @@ func NewBroker() *Broker {
 	}
 }
 
-func (b *Broker) Publish(ctx context.Context, runID string, event *transport.RunEvent) error {
+func (b *Broker) Publish(ctx context.Context, runID, incarnation string, event *transport.RunEvent) error {
+	if err := transport.CheckRunEventIdentity(event, incarnation); err != nil {
+		return err
+	}
+	copy := *event
+	event = &copy
+	runID = transport.RunRecordKey(runID, incarnation)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -318,7 +374,8 @@ func (b *Broker) Publish(ctx context.Context, runID string, event *transport.Run
 	return nil
 }
 
-func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
+func (b *Broker) Subscribe(ctx context.Context, runID, incarnation string) (<-chan *transport.RunEvent, error) {
+	runID = transport.RunRecordKey(runID, incarnation)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -331,7 +388,8 @@ func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport
 	return ch, nil
 }
 
-func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*transport.RunEvent, error) {
+func (b *Broker) Replay(ctx context.Context, runID, incarnation string, sinceSeq int64) ([]*transport.RunEvent, error) {
+	runID = transport.RunRecordKey(runID, incarnation)
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -344,7 +402,8 @@ func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*t
 	return out, nil
 }
 
-func (b *Broker) Close(runID string) error {
+func (b *Broker) Close(runID, incarnation string) error {
+	runID = transport.RunRecordKey(runID, incarnation)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -371,7 +430,8 @@ func NewCancelBus() *CancelBus {
 	return &CancelBus{subs: make(map[string][]chan struct{})}
 }
 
-func (c *CancelBus) PublishCancel(ctx context.Context, runID string) error {
+func (c *CancelBus) PublishCancel(ctx context.Context, runID, incarnation string) error {
+	runID = transport.RunRecordKey(runID, incarnation)
 	c.mu.Lock()
 	subs := c.subs[runID]
 	delete(c.subs, runID)
@@ -387,7 +447,8 @@ func (c *CancelBus) PublishCancel(ctx context.Context, runID string) error {
 	return nil
 }
 
-func (c *CancelBus) SubscribeCancel(ctx context.Context, runID string) (<-chan struct{}, error) {
+func (c *CancelBus) SubscribeCancel(ctx context.Context, runID, incarnation string) (<-chan struct{}, error) {
+	runID = transport.RunRecordKey(runID, incarnation)
 	ch := make(chan struct{}, 1)
 	c.mu.Lock()
 	c.subs[runID] = append(c.subs[runID], ch)

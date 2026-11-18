@@ -29,6 +29,87 @@ func (m govInflight) LookupInflight(_ context.Context, runID string) (*transport
 	return m[runID], nil
 }
 
+// Keep this assignment-only phase covered when PostgreSQL is not configured.
+func TestGovernanceRunBindingFixture(t *testing.T) {
+	testGovernanceRunBinding(t)
+}
+
+func testGovernanceRunBinding(t *testing.T) {
+	t.Helper()
+	inflight := govInflight{
+		"run-bound": {
+			RunID: "run-bound", Generation: 2, TenantID: "acme", GraphID: "echo",
+			RunIncarnationID: "governance-bound-original",
+		},
+	}
+	var gotTenant string
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotTenant = tenant.FromContext(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+	handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight}, next)
+
+	for _, path := range []string{
+		"/internal/store/items",
+		"/internal/connectors/salesforce/session",
+		"/internal/vectors/search",
+	} {
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s unbound: status %d want 401 body=%s", path, rec.Code, rec.Body.String())
+		}
+		var body map[string]string
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("%s unmarshal: %v", path, err)
+		}
+		if body["reason_code"] != auth.ReasonRunBindingRequired {
+			t.Fatalf("%s reason_code=%q want %s", path, body["reason_code"], auth.ReasonRunBindingRequired)
+		}
+	}
+
+	gotTenant = ""
+	req := httptest.NewRequest(http.MethodGet, "/internal/store/items", nil)
+	req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, inflight, req.Header, auth.HeaderRunID, "run-bound"))
+	req.Header.Set(auth.HeaderGeneration, "2")
+	req.Header.Set(auth.HeaderTenantID, "evil")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bound store: status %d body %s", rec.Code, rec.Body.String())
+	}
+	if gotTenant != "acme" {
+		t.Fatalf("tenant=%q want acme from assignment (forged header ignored)", gotTenant)
+	}
+
+	for _, tc := range []struct {
+		name, incarnation, generation, reason string
+		status                                int
+	}{
+		{"missing_original_record", "", "2", auth.ReasonRunBindingRequired, http.StatusUnauthorized},
+		{"superseded_record", "governance-bound-superseded", "2", "run_incarnation_mismatch", http.StatusForbidden},
+		{"stale_generation", inflight["run-bound"].RunIncarnationID, "1", auth.ReasonRunGenerationMismatch, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			gotTenant = ""
+			req := httptest.NewRequest(http.MethodGet, "/internal/store/items", nil)
+			req.Header.Set(auth.HeaderRunID, "run-bound")
+			req.Header.Set(auth.HeaderRunIncarnation, tc.incarnation)
+			req.Header.Set(auth.HeaderGeneration, tc.generation)
+			req.Header.Set(auth.HeaderTenantID, "evil")
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			var body map[string]string
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if rec.Code != tc.status || body["reason_code"] != tc.reason || gotTenant != "" {
+				t.Fatalf("invalid binding: status=%d reason=%q reached tenant=%q", rec.Code, body["reason_code"], gotTenant)
+			}
+		})
+	}
+}
+
 // TestGovernanceAnnounceBar proves security roadmap Phase 0–2 exit criteria
 // on Supported Postgres in one live path (invoked by make smoke-governance).
 //
@@ -59,50 +140,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 	runHITL := "gov-hitl-" + suffix
 	connectorY := "salesforce"
 
-	t.Run("phase0_run_binding", func(t *testing.T) {
-		inflight := govInflight{
-			"run-bound": {RunID: "run-bound", Generation: 2, TenantID: "acme", GraphID: "echo"},
-		}
-		var gotTenant string
-		next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			gotTenant = tenant.FromContext(r.Context())
-			w.WriteHeader(http.StatusOK)
-		})
-		handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: inflight}, next)
-
-		for _, path := range []string{
-			"/internal/store/items",
-			"/internal/connectors/" + connectorY + "/session",
-			"/internal/vectors/search",
-		} {
-			rec := httptest.NewRecorder()
-			handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
-			if rec.Code != http.StatusUnauthorized {
-				t.Fatalf("%s unbound: status %d want 401 body=%s", path, rec.Code, rec.Body.String())
-			}
-			var body map[string]string
-			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
-				t.Fatalf("%s unmarshal: %v", path, err)
-			}
-			if body["reason_code"] != auth.ReasonRunBindingRequired {
-				t.Fatalf("%s reason_code=%q want %s", path, body["reason_code"], auth.ReasonRunBindingRequired)
-			}
-		}
-
-		gotTenant = ""
-		req := httptest.NewRequest(http.MethodGet, "/internal/store/items", nil)
-		req.Header.Set(auth.HeaderRunID, "run-bound")
-		req.Header.Set(auth.HeaderGeneration, "2")
-		req.Header.Set(auth.HeaderTenantID, "evil")
-		rec := httptest.NewRecorder()
-		handler.ServeHTTP(rec, req)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("bound store: status %d body %s", rec.Code, rec.Body.String())
-		}
-		if gotTenant != "acme" {
-			t.Fatalf("tenant=%q want acme from assignment (forged header ignored)", gotTenant)
-		}
-	})
+	t.Run("phase0_run_binding", testGovernanceRunBinding)
 
 	t.Run("phase1_deny_plus_audit", func(t *testing.T) {
 		reg := connector.NewRegistry(map[string]connector.ConnectorConfig{
@@ -122,7 +160,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 		req.SetPathValue("name", connectorY)
 		req = req.WithContext(auth.WithRunBinding(context.Background(), &auth.RunBinding{
 			RunID: runDeny, Generation: 1, TenantID: tenantB, AgentID: "sales",
-			User: &transport.UserContext{Identity: "bob"},
+			User: &transport.UserContext{Identity: "bob"}, RunIncarnationID: originalRunIdentity(t, store, runDeny),
 		}))
 		rec := httptest.NewRecorder()
 		s.handleGetConnectorSession(rec, req)
@@ -217,7 +255,7 @@ func TestGovernanceAnnounceBar(t *testing.T) {
 		// Phase 2b: mandatory HITL pending → approve → one-shot → pending again.
 		binding := &auth.RunBinding{
 			RunID: runHITL, Generation: 1, TenantID: tenantA, AgentID: "sales",
-			User: &transport.UserContext{Identity: "alice"},
+			User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, runHITL),
 		}
 		seedManagedPendingFixture(t, store, binding)
 		callMCP := func() (int, []byte) {

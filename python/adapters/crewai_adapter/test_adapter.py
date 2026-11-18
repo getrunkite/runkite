@@ -75,7 +75,12 @@ async def test_execute_happy_path_emits_expected_events():
 
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r1", "graph_id": "my_crew", "input": {"messages": [{"role": "user", "content": "hello crew"}]}},
+        {
+            "run_id": "r1",
+            "graph_id": "my_crew",
+            "input": {"messages": [{"role": "user", "content": "hello crew"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )
@@ -108,6 +113,7 @@ async def test_extracts_last_human_message_as_input():
                     {"role": "user", "content": "the real ask"},
                 ]
             },
+            "run_incarnation_id": "record-fixture",
         },
         callback,
         None,
@@ -159,7 +165,12 @@ async def test_usage_metrics_delta_not_cumulative_across_calls():
     async def run_once(run_id: str):
         callback, events = _collector()
         status = await adapter.execute(
-            {"run_id": run_id, "graph_id": "my_crew", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+            {
+                "run_id": run_id,
+                "graph_id": "my_crew",
+                "input": {"messages": [{"role": "user", "content": "hi"}]},
+                "run_incarnation_id": "record-fixture",
+            },
             callback,
             None,
         )
@@ -201,7 +212,12 @@ async def test_real_reply_with_no_usage_metrics_is_flagged_unmetered():
 
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r-unmetered", "graph_id": "my_crew", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r-unmetered",
+            "graph_id": "my_crew",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )
@@ -217,7 +233,9 @@ async def test_real_reply_with_no_usage_metrics_is_flagged_unmetered():
 async def test_unknown_graph_id_reports_error():
     adapter = CrewAIAdapter()
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r3", "graph_id": "nope", "input": {}}, callback, None)
+    status = await adapter.execute(
+        {"run_id": "r3", "graph_id": "nope", "input": {}, "run_incarnation_id": "record-fixture"}, callback, None
+    )
     check("unknown graph_id -> error status", status == "error")
     check("error event emitted", any(e["method"] == "error" for e in events))
 
@@ -227,7 +245,12 @@ async def test_crew_exception_reports_error():
     adapter.crews["my_crew"] = _FakeCrew(raise_error=True)
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r4", "graph_id": "my_crew", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r4",
+            "graph_id": "my_crew",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )
@@ -266,7 +289,12 @@ async def test_concurrent_akickoff_on_shared_crew_is_serialized():
     async def run(label: str):
         callback, events = _collector()
         status = await adapter.execute(
-            {"run_id": label, "graph_id": "shared_crew", "input": {"messages": [{"role": "user", "content": label}]}},
+            {
+                "run_id": label,
+                "graph_id": "shared_crew",
+                "input": {"messages": [{"role": "user", "content": label}]},
+                "run_incarnation_id": "record-fixture",
+            },
             callback,
             None,
         )
@@ -290,7 +318,12 @@ async def test_cancel_event_interrupts_a_slow_crew():
     fire_task = asyncio.ensure_future(_fire_cancel_soon())
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r5", "graph_id": "my_crew", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r5",
+            "graph_id": "my_crew",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         cancel_event,
     )

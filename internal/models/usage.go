@@ -5,17 +5,18 @@ import "time"
 // UsageEvent is one durable token/cost observation for a run (SQL backends).
 // Terminal ingest writes source=terminal_output from run Output.usage.
 type UsageEvent struct {
-	ID          string    `json:"id"`
-	TS          time.Time `json:"ts"`
-	TenantID    string    `json:"tenant_id"`
-	RunID       string    `json:"run_id"`
-	AgentID     string    `json:"agent_id,omitempty"`
-	Principal   string    `json:"principal,omitempty"`
-	Model       string    `json:"model,omitempty"`
-	TokensIn    int64     `json:"tokens_in"`
-	TokensOut   int64     `json:"tokens_out"`
-	USDEstimate float64   `json:"usd_estimate"`
-	Source      string    `json:"source"`
+	RunIncarnationID string    `json:"-"`
+	ID               string    `json:"id"`
+	TS               time.Time `json:"ts"`
+	TenantID         string    `json:"tenant_id"`
+	RunID            string    `json:"run_id"`
+	AgentID          string    `json:"agent_id,omitempty"`
+	Principal        string    `json:"principal,omitempty"`
+	Model            string    `json:"model,omitempty"`
+	TokensIn         int64     `json:"tokens_in"`
+	TokensOut        int64     `json:"tokens_out"`
+	USDEstimate      float64   `json:"usd_estimate"`
+	Source           string    `json:"source"`
 }
 
 // UsageSourceTerminalOutput is written when a run reaches a terminal
@@ -45,12 +46,13 @@ type UsageSummaryRow struct {
 // UsageHold is an optimistic reservation counted toward UTC-day budgets
 // until the run terminates (SQL backends).
 type UsageHold struct {
-	RunID      string    `json:"run_id"`
-	TenantID   string    `json:"tenant_id"`
-	AgentID    string    `json:"agent_id,omitempty"`
-	USDHold    float64   `json:"usd_hold"`
-	TokensHold int64     `json:"tokens_hold"`
-	CreatedAt  time.Time `json:"created_at"`
+	RunIncarnationID string    `json:"-"`
+	RunID            string    `json:"run_id"`
+	TenantID         string    `json:"tenant_id"`
+	AgentID          string    `json:"agent_id,omitempty"`
+	USDHold          float64   `json:"usd_hold"`
+	TokensHold       int64     `json:"tokens_hold"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 // UsageHoldsSummary is open-hold totals for Admin Spend KPIs.

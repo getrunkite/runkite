@@ -61,7 +61,7 @@ func TestExhaustedReclaimRetainsDeliveryUntilDurableAcknowledgement(t *testing.T
 			t.Fatalf("exhausted delivery acknowledged before durable completion: messages=%d", info.State.Msgs)
 		}
 	}
-	if accepted, err := queue.Ack(ctx, job.RunID, job.Generation); err != nil || !accepted {
+	if accepted, err := queue.Ack(ctx, job.RunID, "", job.Generation); err != nil || !accepted {
 		t.Fatalf("durable completion Ack=%v %v", accepted, err)
 	}
 	if actual, err := queue.LookupInflight(ctx, job.RunID); err != nil || actual != nil {

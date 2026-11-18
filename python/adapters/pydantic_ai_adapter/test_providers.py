@@ -285,7 +285,7 @@ class ProviderWireTests(unittest.IsolatedAsyncioTestCase):
             if event["method"] == "values" and "result" in event["data"]:
                 self.assertGreater(self.puts, 0, "typed result must not publish before its durable commit")
 
-        tenant, run = bind_tenant("wire-tenant"), bind_run(run_id, 1)
+        tenant, run = bind_tenant("wire-tenant"), bind_run(run_id, 1, run_incarnation_id="record-fixture")
         try:
             assignment = {
                 "run_id": run_id,
@@ -294,6 +294,7 @@ class ProviderWireTests(unittest.IsolatedAsyncioTestCase):
                 "tenant_id": "wire-tenant",
                 "generation": 1,
                 "input": {"messages": [{"role": "user", "content": text}]},
+                "run_incarnation_id": "record-fixture",
             }
             if allowed is not None:
                 assignment["allowed_tools"] = allowed

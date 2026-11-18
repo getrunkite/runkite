@@ -12,7 +12,14 @@ from runkite_runner.worker import LangGraphAdapter, execute_run
 
 
 def assignment(tenant, thread):
-    return {"run_id": "identity-run", "thread_id": thread, "tenant_id": tenant, "graph_id": "graph", "input": {}}
+    return {
+        "run_id": "identity-run",
+        "thread_id": thread,
+        "tenant_id": tenant,
+        "graph_id": "graph",
+        "input": {},
+        "run_incarnation_id": "record-fixture",
+    }
 
 
 class CheckpointIdentityTests(unittest.IsolatedAsyncioTestCase):

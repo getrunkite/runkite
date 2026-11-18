@@ -56,10 +56,10 @@ func TestLLMCache_MissDispatchesThenHitSkipsRunner(t *testing.T) {
 	}
 
 	// Simulate the runner completing successfully.
-	env.broker.Publish(ctx, run1.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run1.RunID, originalRunIdentity(t, env.store, run1.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run1.RunID), &transport.RunEvent{
 		EventID: "e1", Seq: 1, Method: "values",
 		Namespace: []string{}, Data: json.RawMessage(`{"messages":[{"role":"ai","content":"4"}]}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 	env.apiServer.StatusCallback()(run1.RunID, "success", "")
 
 	// Second request with the SAME agent+input: must be a cache hit --
@@ -124,10 +124,10 @@ func TestLLMCache_WaitEndpointServesCacheHitDirectly(t *testing.T) {
 	var run1 models.Run
 	json.Unmarshal(readBody(t, resp), &run1)
 	env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
-	env.broker.Publish(ctx, run1.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run1.RunID, originalRunIdentity(t, env.store, run1.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run1.RunID), &transport.RunEvent{
 		EventID: "e1", Seq: 1, Method: "values", Namespace: []string{},
 		Data: json.RawMessage(`{"answer":"42"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 	env.apiServer.StatusCallback()(run1.RunID, "success", "")
 
 	// This must return promptly, not hang -- the test's own timeout
@@ -159,10 +159,10 @@ func TestLLMCache_StreamEndpointServesCacheHitDirectly(t *testing.T) {
 	var run1 models.Run
 	json.Unmarshal(readBody(t, resp), &run1)
 	env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
-	env.broker.Publish(ctx, run1.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run1.RunID, originalRunIdentity(t, env.store, run1.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run1.RunID), &transport.RunEvent{
 		EventID: "e1", Seq: 1, Method: "values", Namespace: []string{},
 		Data: json.RawMessage(`{"answer":"stream-42"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 	env.apiServer.StatusCallback()(run1.RunID, "success", "")
 
 	streamResp, _ := postJSON(env.srv.URL+"/runs/stream", map[string]interface{}{"agent_id": "stream-cache-agent", "input": input})
@@ -200,10 +200,10 @@ func TestLLMCache_WebSocketRunStartCacheHitDoesNotHang(t *testing.T) {
 	var run1 models.Run
 	json.Unmarshal(readBody(t, resp), &run1)
 	env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
-	env.broker.Publish(ctx, run1.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run1.RunID, originalRunIdentity(t, env.store, run1.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run1.RunID), &transport.RunEvent{
 		EventID: "e1", Seq: 1, Method: "values", Namespace: []string{},
 		Data: json.RawMessage(`{"answer":"ws-42"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 	env.apiServer.StatusCallback()(run1.RunID, "success", "")
 
 	c, _, err := websocket.Dial(ctx, wsURL(env.srv.URL)+"/threads/ws-cache-thread/websocket", nil)
@@ -248,10 +248,10 @@ func TestLLMCache_DifferentInputIsMiss(t *testing.T) {
 	var run1 models.Run
 	json.Unmarshal(readBody(t, resp), &run1)
 	env.queue.Dequeue(ctx, "python-langgraph", 2*time.Second)
-	env.broker.Publish(ctx, run1.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run1.RunID, originalRunIdentity(t, env.store, run1.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run1.RunID), &transport.RunEvent{
 		EventID: "e1", Seq: 1, Method: "values", Namespace: []string{},
 		Data: json.RawMessage(`{"answer":"a-answer"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 	env.apiServer.StatusCallback()(run1.RunID, "success", "")
 
 	// Different input -- must NOT hit the cache.

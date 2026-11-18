@@ -28,11 +28,11 @@ func recoveryReviewFixture(t *testing.T) (*api.Server, *bridge.Server, func(int)
 	rpc := bridge.NewServer(q, b, c, nil)
 	rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 	ctx := context.Background()
-	response, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+	response, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if err != nil || !response.HasJob {
 		t.Fatal(response, err)
 	}
-	stream := &closeFailureReviewStream{&completionStream{msgs: []*pb.RunEventProto{completionEvent(1, 1, "values", `{"answer":"succeeded"}`), completionEvent(1, 2, "end", `{"status":"success"}`)}}}
+	stream := &closeFailureReviewStream{&completionStream{msgs: []*pb.RunEventProto{completionEvent(t, store, 1, 1, "values", `{"answer":"succeeded"}`), completionEvent(t, store, 1, 2, "end", `{"status":"success"}`)}}}
 	if err := rpc.StreamEvents(stream); err == nil {
 		t.Fatal("expected lost stream-close acknowledgment")
 	}
@@ -69,24 +69,24 @@ func TestReclaimRecoversActualLegacyGenerationZeroTerminal(t *testing.T) {
 	store, _, b, c := completionFixture(t)
 	q := inprocess.NewQueue()
 	ctx := context.Background()
-	if err := q.Enqueue(ctx, &transport.RunAssignment{RunID: "run", ThreadID: "thread", RunnerKind: "kind", GraphID: "agent", Generation: 0}); err != nil {
+	if err := q.Enqueue(ctx, &transport.RunAssignment{RunID: "run", ThreadID: "thread", RunnerKind: "kind", GraphID: "agent", Generation: 0, RunIncarnationID: originalRunIdentity(t, store, "run")}); err != nil {
 		t.Fatal(err)
 	}
 	plane := api.NewServer(store, q, b, c)
 	rpc := bridge.NewServer(q, b, c, nil)
 	rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
-	first, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+	first, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if err != nil || !first.HasJob {
 		t.Fatal(first, err)
 	}
-	stream := &closeFailureReviewStream{&completionStream{msgs: []*pb.RunEventProto{completionEvent(0, 1, "values", `{"answer":"legacy succeeded"}`), completionEvent(0, 2, "end", `{"status":"success"}`)}}}
+	stream := &closeFailureReviewStream{&completionStream{msgs: []*pb.RunEventProto{completionEvent(t, store, 0, 1, "values", `{"answer":"legacy succeeded"}`), completionEvent(t, store, 0, 2, "end", `{"status":"success"}`)}}}
 	if err := rpc.StreamEvents(stream); err == nil {
 		t.Fatal("expected stream-close failure")
 	}
 	if n, dead, err := q.ReclaimStale(ctx, -time.Second, 1); err != nil || n != 1 || len(dead) != 0 {
 		t.Fatal(n, dead, err)
 	}
-	second, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+	second, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,10 +107,10 @@ func TestStrayUnversionedTerminalCannotCompleteAnUndispatchedRun(t *testing.T) {
 	store, q, b, c := completionFixture(t)
 	plane := api.NewServer(store, q, b, c)
 	ctx := context.Background()
-	if err := b.Publish(ctx, "run", &transport.RunEvent{Generation: 0, Seq: 1, Method: "end", Data: json.RawMessage(`{"status":"success"}`)}); err != nil {
+	if err := b.Publish(ctx, "run", originalRunIdentity(t, store, "run"), withOriginalRunEvent(originalRunIdentity(t, store, "run"), &transport.RunEvent{Generation: 0, Seq: 1, Method: "end", Data: json.RawMessage(`{"status":"success"}`)})); err != nil {
 		t.Fatal(err)
 	}
-	accepted, err := plane.BeginRunAttempt(ctx, "run", 1)
+	accepted, err := plane.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1)
 	if err != nil || !accepted {
 		t.Fatalf("unversioned stray history blocked first dispatch: accepted=%t err=%v", accepted, err)
 	}
@@ -149,14 +149,14 @@ func TestPoisonPillDoesNotRecoverUnconfirmedOrWrongAttemptOutcome(t *testing.T) 
 			if err != nil || assignment == nil || assignment.Generation != test.current {
 				t.Fatal(assignment, err)
 			}
-			if ok, err := store.BeginRunAttempt(ctx, "run", test.current); err != nil || !ok {
+			if ok, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), test.current); err != nil || !ok {
 				t.Fatal(ok, err)
 			}
-			if err := b.Publish(ctx, "run", &transport.RunEvent{Generation: test.current, Seq: 1, Method: "values", Data: json.RawMessage(`{"answer":"partial"}`)}); err != nil {
+			if err := b.Publish(ctx, "run", originalRunIdentity(t, store, "run"), withOriginalRunEvent(originalRunIdentity(t, store, "run"), &transport.RunEvent{Generation: test.current, Seq: 1, Method: "values", Data: json.RawMessage(`{"answer":"partial"}`)})); err != nil {
 				t.Fatal(err)
 			}
 			if test.terminal != nil {
-				if err := b.Publish(ctx, "run", test.terminal); err != nil {
+				if err := b.Publish(ctx, "run", originalRunIdentity(t, store, "run"), withOriginalRunEvent(originalRunIdentity(t, store, "run"), test.terminal)); err != nil {
 					t.Fatal(err)
 				}
 			}

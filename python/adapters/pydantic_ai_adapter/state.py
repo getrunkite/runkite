@@ -8,6 +8,7 @@ import math
 from decimal import Decimal
 from typing import Any
 
+from runkite_runner.assignment_identity import receipt_native_turn_id, require_run_incarnation
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.opaque_checkpoint import OpaqueCheckpointClient, _strong_numeric_etag
 
@@ -298,7 +299,9 @@ def _validate_envelope(value: Any, graph_id: str) -> None:
     if index != len(expected):
         raise ValueError("native caller system input is missing")
     receipt = value["completed"]
-    _keys(receipt, {"status", "run_id", "input", "output", "text_events"})
+    _keys(receipt, {"status", "run_id", "input", "output", "text_events"}, {"run_incarnation_id"})
+    if "run_incarnation_id" in receipt:
+        require_run_incarnation(receipt["run_incarnation_id"])
     if (
         receipt["status"] != "success"
         or type(receipt["run_id"]) is not str
@@ -306,7 +309,7 @@ def _validate_envelope(value: Any, graph_id: str) -> None:
         or type(receipt["input"]) is not str
     ):
         raise ValueError("native state requires a successful committed receipt")
-    if responses[-1].run_id != receipt["run_id"]:
+    if responses[-1].run_id != receipt_native_turn_id(receipt):
         raise ValueError("native latest run does not match its receipt")
     incoming = _messages(json.loads(receipt["input"], object_pairs_hook=_unique_object), incoming=True)
     if state_json(incoming) != receipt["input"]:

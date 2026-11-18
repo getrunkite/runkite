@@ -160,6 +160,7 @@ async function fixture(t: TestContext, factory: AiSdkAgentFactory, state = new S
 function assignment(overrides: Partial<RunAssignment> = {}): RunAssignment {
   return {
     run_id: "run-one",
+    run_incarnation_id: "record-one",
     thread_id: "thread-one",
     graph_id: "notes",
     tenant_id: "default",
@@ -720,4 +721,79 @@ test("client-supplied assistant history cannot replace runner-owned native histo
   assert.equal(result.status, "error");
   assert.equal(factoryCalls, 0);
   assert.equal(instance.state.rows.size, 0);
+});
+
+test("a replacement record with the same public run ID executes a fresh turn", async (t) => {
+  const effects: string[] = [];
+  const prompts: unknown[] = [];
+  let factoryCalls = 0;
+  const instance = await fixture(t, () => {
+    factoryCalls++;
+    return nativeToolDefinition(effects, (prompt) => prompts.push(prompt));
+  });
+  await execute(instance.adapter);
+  const replacement = await execute(await instance.create(), assignment({ run_incarnation_id: "record-two" }));
+  assert.equal(replacement.status, "success");
+  assert.equal(factoryCalls, 2, "the old record's receipt must not suppress the replacement model loop");
+  assert.equal(effects.length, 2, "each distinct record owns its own tool cycle");
+  assert.equal(instance.state.read("thread-one").completed.run_incarnation_id, "record-two");
+  assert.equal(instance.state.calls.filter((call) => call.method === "PUT").length, 2);
+  assert.equal(finalValues(replacement.events).usage.total_tokens, 24, "only the new turn is metered");
+  assert.equal((prompts[2] as Array<{ role: string }>).filter((message) => message.role === "user").length, 2);
+  const recovered = await execute(
+    await instance.create(),
+    assignment({ run_incarnation_id: "record-two", generation: 2 }),
+  );
+  assert.equal(recovered.status, "success");
+  assert.equal(factoryCalls, 2, "reclaim of the current original record still replays");
+  assert.equal(effects.length, 2);
+});
+
+test("a legacy same-ID receipt cannot prove reclaim, but previous-turn history stays readable", async (t) => {
+  let factoryCalls = 0;
+  const instance = await fixture(t, () => {
+    factoryCalls++;
+    return textDefinition();
+  });
+  await execute(instance.adapter);
+  const stored = instance.state.read("thread-one");
+  delete stored.completed.run_incarnation_id;
+  instance.state.seed("thread-one", "default", stored);
+  const events: RunEvent[] = [];
+  await assert.rejects(
+    instance.adapter.execute(
+      assignment({ generation: 2 }),
+      async (event) => {
+        events.push(event);
+      },
+      () => false,
+    ),
+    CompletionDeliveryError,
+  );
+  assert.equal(factoryCalls, 1);
+  assertNoSuccessfulCompletion(events);
+  const next = await execute(
+    await instance.create(),
+    assignment({ run_id: "run-next", run_incarnation_id: "record-next" }),
+  );
+  assert.equal(next.status, "success");
+  assert.equal(factoryCalls, 2);
+  assert.equal(
+    instance.state.read("thread-one").messages.filter((message: { role: string }) => message.role === "user").length,
+    2,
+  );
+});
+
+test("AI SDK refuses a missing original record proof before factory, checkpoint or model work", async (t) => {
+  let factoryCalls = 0;
+  const instance = await fixture(t, () => {
+    factoryCalls++;
+    return textDefinition();
+  });
+  await assert.rejects(
+    execute(instance.adapter, assignment({ run_incarnation_id: undefined })),
+    CompletionDeliveryError,
+  );
+  assert.equal(factoryCalls, 0);
+  assert.equal(instance.state.calls.length, 0);
 });

@@ -75,7 +75,7 @@ func TestAdminCannotApproveOverdueEmbeddedPending(t *testing.T) {
 	if err := store.CreateRun(ctx, &models.Run{RunID: "connector", ThreadID: "connector-thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := store.BeginRunAttempt(ctx, "connector", 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, "connector", originalRunIdentity(t, store, "connector"), 1); err != nil || !accepted {
 		t.Fatalf("start managed control run: accepted=%v error=%v", accepted, err)
 	}
 	run, err := store.GetRun(ctx, "connector")

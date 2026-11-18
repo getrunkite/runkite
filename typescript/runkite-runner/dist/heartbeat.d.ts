@@ -45,6 +45,7 @@ export interface HeartbeatHandle {
     stop(): void;
 }
 export interface HeartbeatLoopOptions {
+    runIncarnationId?: string;
     /** Echo the token from GetJob. The default zero matches only a legacy
      * generation-zero assignment; it never disables current-attempt fencing. */
     generation?: number;

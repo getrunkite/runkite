@@ -17,9 +17,10 @@ import (
 // Headers runners must send on run-bound /internal/* proxy paths so the
 // control plane can prove the call belongs to an active dispatch.
 const (
-	HeaderRunID       = "X-Runkite-Run-Id"
-	HeaderRunIDBase64 = "X-Runkite-Run-Id-B64"
-	HeaderGeneration  = "X-Runkite-Generation"
+	HeaderRunID          = "X-Runkite-Run-Id"
+	HeaderRunIDBase64    = "X-Runkite-Run-Id-B64"
+	HeaderGeneration     = "X-Runkite-Generation"
+	HeaderRunIncarnation = "X-Runkite-Run-Incarnation"
 )
 
 // ValidRunID rejects new identifiers that older helpers would normalize or
@@ -85,6 +86,20 @@ type RunBinding struct {
 
 type runBindingKey struct{}
 
+// ValidRunIncarnation accepts the bounded, header-safe opaque identity echoed
+// from a dispatch. It is not a credential and is never inferred from a run ID.
+func ValidRunIncarnation(value string) bool {
+	if value == "" || len(value) > 256 {
+		return false
+	}
+	for _, character := range value {
+		if character < 0x21 || character > 0x7e {
+			return false
+		}
+	}
+	return true
+}
+
 // WithRunBinding attaches a resolved RunBinding to ctx.
 func WithRunBinding(ctx context.Context, b *RunBinding) context.Context {
 	return context.WithValue(ctx, runBindingKey{}, b)
@@ -124,6 +139,11 @@ func requiresRunBinding(path string) bool {
 func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens *RunnerTokens, inflight InflightLookup) (context.Context, bool) {
 	runID, validRunID := exactIdentityHeader(r, HeaderRunID, HeaderRunIDBase64)
 	genRaw := strings.TrimSpace(r.Header.Get(HeaderGeneration))
+	incarnation := r.Header.Get(HeaderRunIncarnation)
+	if !ValidRunIncarnation(incarnation) || len(r.Header.Values(HeaderRunIncarnation)) != 1 {
+		writeDenied(w, http.StatusUnauthorized, ReasonRunBindingRequired, "original run record identity required")
+		return nil, false
+	}
 	if !validRunID || runID == "" || genRaw == "" || len(r.Header.Values(HeaderGeneration)) != 1 {
 		writeDenied(w, http.StatusUnauthorized, ReasonRunBindingRequired,
 			"missing or invalid run identity header or X-Runkite-Generation")
@@ -145,6 +165,10 @@ func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens
 	if assignment == nil {
 		writeDenied(w, http.StatusForbidden, ReasonRunNotInflight,
 			"run is not in-flight")
+		return nil, false
+	}
+	if assignment.RunIncarnationID == "" || assignment.RunIncarnationID != incarnation {
+		writeDenied(w, http.StatusForbidden, "run_incarnation_mismatch", "run record identity mismatch")
 		return nil, false
 	}
 	if tokens.Enabled() && assignment.RunnerKind != kind {
@@ -181,7 +205,7 @@ func bindInternalRun(w http.ResponseWriter, r *http.Request, kind string, tokens
 
 	binding := &RunBinding{
 		RunID:            runID,
-		RunIncarnationID: assignment.RunIncarnationID,
+		RunIncarnationID: incarnation,
 		Generation:       assignment.Generation,
 		TenantID:         tenantID,
 		AgentID:          assignment.GraphID,

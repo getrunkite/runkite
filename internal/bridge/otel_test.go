@@ -32,7 +32,7 @@ func TestGRPCOtel_GetJobEmitsServerSpan(t *testing.T) {
 	queue := inprocess.NewQueue()
 	broker := inprocess.NewBroker()
 	cancelBus := inprocess.NewCancelBus()
-	srv := NewServer(queue, broker, cancelBus, nil)
+	srv := newIdentityServer(queue, broker, cancelBus, nil)
 
 	lis := bufconn.Listen(1024 * 1024)
 	grpcServer := grpc.NewServer(
@@ -58,7 +58,7 @@ func TestGRPCOtel_GetJobEmitsServerSpan(t *testing.T) {
 
 	_, err = client.GetJob(context.Background(), &pb.GetJobRequest{
 		RunnerKind:     "python-langgraph",
-		TimeoutSeconds: 1,
+		TimeoutSeconds: 1, AssignmentIdentityVersion: 1,
 	})
 	if err != nil {
 		t.Fatalf("GetJob: %v", err)

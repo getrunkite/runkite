@@ -29,7 +29,7 @@ func TestActionOutboxFailureRollsBackDispatchAndApproval(t *testing.T) {
 	if err := s.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
 	target, policyRevision := testPendingTargetRevision, testPendingPolicyRevision

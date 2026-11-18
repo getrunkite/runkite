@@ -43,12 +43,14 @@ async def test_pre_arrived_cancel_is_observed():
 
     # Simulates watch_cancels() observing a signal for a run_id the
     # poll loop hasn't registered yet.
-    pre_cancelled.add("early-run")
+    pre_cancelled.add(("early-run", "record-fixture"))
 
-    ev = await register_run(pending, pre_cancelled, lock, "early-run")
+    ev = await register_run(pending, pre_cancelled, lock, "early-run", run_incarnation_id="record-fixture")
     check("pre-arrived cancel leaves the Event already set", ev.is_set())
-    check("pre_cancelled entry stays latched for replacement attempts", "early-run" in pre_cancelled)
-    check("the attempt Event is stored under its run_id", ev in pending["early-run"])
+    check(
+        "pre_cancelled entry stays latched for replacement attempts", ("early-run", "record-fixture") in pre_cancelled
+    )
+    check("the attempt Event is stored under its run_id", ev in pending[("early-run", "record-fixture")])
 
 
 async def test_normal_registration_is_unaffected():
@@ -56,7 +58,7 @@ async def test_normal_registration_is_unaffected():
     pre_cancelled: set = set()
     lock = asyncio.Lock()
 
-    ev = await register_run(pending, pre_cancelled, lock, "normal-run")
+    ev = await register_run(pending, pre_cancelled, lock, "normal-run", run_incarnation_id="record-fixture")
     check("a run with no pre-arrived signal gets a normal unset Event", not ev.is_set())
 
 
@@ -65,11 +67,11 @@ async def test_unrelated_pre_cancelled_entries_dont_leak_across_runs():
     pre_cancelled: set = set()
     lock = asyncio.Lock()
 
-    pre_cancelled.add("run-a")
-    ev_a = await register_run(pending, pre_cancelled, lock, "run-a")
+    pre_cancelled.add(("run-a", "record-fixture"))
+    ev_a = await register_run(pending, pre_cancelled, lock, "run-a", run_incarnation_id="record-fixture")
     check("run-a's own pre-arrived cancel is observed", ev_a.is_set())
 
-    ev_b = await register_run(pending, pre_cancelled, lock, "run-b")
+    ev_b = await register_run(pending, pre_cancelled, lock, "run-b", run_incarnation_id="record-fixture")
     check("run-b (unrelated run_id) is unaffected by run-a's cancel", not ev_b.is_set())
 
 

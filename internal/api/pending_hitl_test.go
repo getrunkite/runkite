@@ -63,7 +63,7 @@ func TestPendingHITL_ApproveOneShotRetry(t *testing.T) {
 
 	binding := &auth.RunBinding{
 		RunID: "run-hitl-" + uuid.NewString(), Generation: 3, TenantID: "acme", AgentID: "sales",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, "run-hitl-"+uuid.NewString()),
 	}
 	seedManagedPendingFixture(t, store, binding)
 	callMCP := func() (status int, body []byte) {

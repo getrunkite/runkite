@@ -55,11 +55,16 @@ func (s *completionStream) SendAndClose(r *pb.StreamEventsResponse) error {
 	s.response = r
 	return s.closeErr
 }
-func completionEvent(gen, seq int64, method, data string) *pb.RunEventProto {
+func completionEvent(t *testing.T, store state.Store, gen, seq int64, method, data string) *pb.RunEventProto {
 	raw, _ := json.Marshal(&transport.RunEvent{EventID: method, Seq: seq, Method: method, Data: json.RawMessage(data)})
-	return &pb.RunEventProto{RunId: "run", Generation: gen, EventJson: string(raw)}
+	return &pb.RunEventProto{RunId: "run", Generation: gen, EventJson: string(raw), RunIncarnationId: originalRunIdentity(t, store, "run")}
 }
 func completionFixture(t *testing.T, runMetadata ...map[string]interface{}) (*sqlite.SQLiteStore, *inprocess.Queue, *inprocess.Broker, *inprocess.CancelBus) {
+	t.Helper()
+	return completionFixtureAt(t, time.Now().UTC(), runMetadata...)
+}
+
+func completionFixtureAt(t *testing.T, now time.Time, runMetadata ...map[string]interface{}) (*sqlite.SQLiteStore, *inprocess.Queue, *inprocess.Broker, *inprocess.CancelBus) {
 	t.Helper()
 	ctx := context.Background()
 	store, err := sqlite.New("")
@@ -70,7 +75,6 @@ func completionFixture(t *testing.T, runMetadata ...map[string]interface{}) (*sq
 	if err := store.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
 	if err := store.CreateThread(ctx, &models.Thread{ThreadID: "thread", Status: models.ThreadStatusBusy, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +86,7 @@ func completionFixture(t *testing.T, runMetadata ...map[string]interface{}) (*sq
 		t.Fatal(err)
 	}
 	q := inprocess.NewQueue()
-	if err := q.Enqueue(ctx, &transport.RunAssignment{RunID: "run", ThreadID: "thread", RunnerKind: "kind", GraphID: "agent", Generation: 1}); err != nil {
+	if err := q.Enqueue(ctx, &transport.RunAssignment{RunID: "run", ThreadID: "thread", RunnerKind: "kind", GraphID: "agent", Generation: 1, RunIncarnationID: originalRunIdentity(t, store, "run")}); err != nil {
 		t.Fatal(err)
 	}
 	return store, q, inprocess.NewBroker(), inprocess.NewCancelBus()
@@ -94,18 +98,18 @@ func TestDurableCompletionFailureRetainsLeaseAndRetryIsIdempotent(t *testing.T) 
 	rpc := bridge.NewServer(q, b, c, nil)
 	rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 	ctx := context.Background()
-	if r, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1}); err != nil || !r.HasJob {
+	if r, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1}); err != nil || !r.HasJob {
 		t.Fatal(r, err)
 	}
 	started, err := store.GetRun(ctx, "run")
 	if err != nil || started.Status != models.RunStatusRunning || state.MetadataGeneration(started.Metadata, state.AttemptGenerationKey) != 1 {
 		t.Fatalf("GetJob did not persist running attempt: run=%+v err=%v", started, err)
 	}
-	stream := &completionStream{msgs: []*pb.RunEventProto{completionEvent(1, 1, "values", `{"answer":"kept"}`), completionEvent(1, 2, "end", `{"status":"success"}`)}}
+	stream := &completionStream{msgs: []*pb.RunEventProto{completionEvent(t, store, 1, 1, "values", `{"answer":"kept"}`), completionEvent(t, store, 1, 2, "end", `{"status":"success"}`)}}
 	if err := rpc.StreamEvents(stream); err != nil {
 		t.Fatal(err)
 	}
-	req := &pb.ReportStatusRequest{RunId: "run", Generation: 1, Status: "success"}
+	req := &pb.ReportStatusRequest{RunId: "run", Generation: 1, Status: "success", RunIncarnationId: originalRunIdentity(t, store, "run")}
 	if _, err := rpc.ReportStatus(ctx, req); status.Code(err) != codes.Unavailable {
 		t.Fatalf("expected retryable error, got %v", err)
 	}
@@ -136,14 +140,14 @@ func TestLostStreamAcknowledgementRecoversAgentOutcomeBeforeRedispatch(t *testin
 	rpc := bridge.NewServer(q, b, c, nil)
 	rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 	ctx := context.Background()
-	if response, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1}); err != nil || !response.HasJob {
+	if response, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1}); err != nil || !response.HasJob {
 		t.Fatalf("first dispatch: response=%v err=%v", response, err)
 	}
 	ackLost := errors.New("stream close acknowledgement lost")
 	stream := &completionStream{
 		msgs: []*pb.RunEventProto{
-			completionEvent(1, 1, "values", `{"answer":"agent succeeded"}`),
-			completionEvent(1, 2, "end", `{"status":"success"}`),
+			completionEvent(t, store, 1, 1, "values", `{"answer":"agent succeeded"}`),
+			completionEvent(t, store, 1, 2, "end", `{"status":"success"}`),
 		},
 		closeErr: ackLost,
 	}
@@ -155,7 +159,7 @@ func TestLostStreamAcknowledgementRecoversAgentOutcomeBeforeRedispatch(t *testin
 	if reclaimed, _, err := q.ReclaimStale(ctx, -time.Second, 3); err != nil || reclaimed != 1 {
 		t.Fatalf("reclaim: count=%d err=%v", reclaimed, err)
 	}
-	if response, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1}); err != nil || response.HasJob {
+	if response, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1}); err != nil || response.HasJob {
 		t.Fatalf("completed agent was redispatched: response=%v err=%v", response, err)
 	}
 	saved, err := store.GetRun(ctx, "run")
@@ -180,21 +184,21 @@ func TestDurableCompletionIgnoresSupersededValues(t *testing.T) {
 	rpc := bridge.NewServer(q, b, c, nil)
 	rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 	ctx := context.Background()
-	rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+	rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	q.ReclaimStale(ctx, -time.Second, 3)
-	rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
-	stream := &completionStream{msgs: []*pb.RunEventProto{completionEvent(2, 1, "values", `{"answer":"current"}`), completionEvent(1, 50, "values", `{"answer":"stale"}`), completionEvent(2, 2, "end", `{"status":"success"}`)}}
+	rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
+	stream := &completionStream{msgs: []*pb.RunEventProto{completionEvent(t, store, 2, 1, "values", `{"answer":"current"}`), completionEvent(t, store, 1, 50, "values", `{"answer":"stale"}`), completionEvent(t, store, 2, 2, "end", `{"status":"success"}`)}}
 	if err := rpc.StreamEvents(stream); err != nil {
 		t.Fatal(err)
 	}
-	if resp, err := rpc.ReportStatus(ctx, &pb.ReportStatusRequest{RunId: "run", Generation: 2, Status: "success"}); err != nil || resp.Superseded {
+	if resp, err := rpc.ReportStatus(ctx, &pb.ReportStatusRequest{RunId: "run", Generation: 2, Status: "success", RunIncarnationId: originalRunIdentity(t, store, "run")}); err != nil || resp.Superseded {
 		t.Fatal(resp, err)
 	}
 	thread, _ := store.GetThread(ctx, "thread")
 	if thread.Values["answer"] != "current" {
 		t.Fatal(thread.Values)
 	}
-	events, _ := b.Replay(ctx, "run", 0)
+	events, _ := b.Replay(ctx, "run", originalRunIdentity(t, store, "run"), 0)
 	for _, e := range events {
 		if e.Generation != 2 {
 			t.Fatalf("stale event persisted: %+v", e)
@@ -208,19 +212,19 @@ func TestDurableCompletionDoesNotUseUnversionedValuesForCurrentAttempt(t *testin
 			store, q, b, c := completionFixture(t)
 			plane := api.NewServer(store, q, b, c)
 			ctx := context.Background()
-			if _, err := plane.BeginRunAttempt(ctx, "run", 2); err != nil {
+			if _, err := plane.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 2); err != nil {
 				t.Fatal(err)
 			}
 			if currentValues {
-				if err := b.Publish(ctx, "run", &transport.RunEvent{Generation: 2, Seq: 1, Method: "values", Data: json.RawMessage(`{"answer":"current"}`)}); err != nil {
+				if err := b.Publish(ctx, "run", originalRunIdentity(t, store, "run"), withOriginalRunEvent(originalRunIdentity(t, store, "run"), &transport.RunEvent{Generation: 2, Seq: 1, Method: "values", Data: json.RawMessage(`{"answer":"current"}`)})); err != nil {
 					t.Fatal(err)
 				}
 			}
 			// Defend durable output even against legacy events already in replay.
-			if err := b.Publish(ctx, "run", &transport.RunEvent{Generation: 0, Seq: 50, Method: "values", Data: json.RawMessage(`{"answer":"stale"}`)}); err != nil {
+			if err := b.Publish(ctx, "run", originalRunIdentity(t, store, "run"), withOriginalRunEvent(originalRunIdentity(t, store, "run"), &transport.RunEvent{Generation: 0, Seq: 50, Method: "values", Data: json.RawMessage(`{"answer":"stale"}`)})); err != nil {
 				t.Fatal(err)
 			}
-			if ok, err := plane.CompleteRun(ctx, &state.RunCompletion{RunID: "run", Generation: 2, Status: models.RunStatusSuccess}); err != nil || !ok {
+			if ok, err := plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: "run", Generation: 2, Status: models.RunStatusSuccess})); err != nil || !ok {
 				t.Fatalf("completion accepted=%v err=%v", ok, err)
 			}
 			saved, err := store.GetRun(ctx, "run")
@@ -241,7 +245,7 @@ func TestDurableCompletionDoesNotUseUnversionedValuesForCurrentAttempt(t *testin
 
 type failedCompletionBroker struct{ transport.EventBroker }
 
-func (b failedCompletionBroker) Publish(context.Context, string, *transport.RunEvent) error {
+func (b failedCompletionBroker) Publish(context.Context, string, string, *transport.RunEvent) error {
 	return errors.New("event persistence outage")
 }
 func TestDurableCompletionEventFailureIsNotAcknowledged(t *testing.T) {
@@ -251,12 +255,12 @@ func TestDurableCompletionEventFailureIsNotAcknowledged(t *testing.T) {
 	rpc := bridge.NewServer(q, broken, c, nil)
 	rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 	ctx := context.Background()
-	rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
-	stream := &completionStream{msgs: []*pb.RunEventProto{completionEvent(1, 1, "values", `{"answer":"lost"}`)}}
+	rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
+	stream := &completionStream{msgs: []*pb.RunEventProto{completionEvent(t, store, 1, 1, "values", `{"answer":"lost"}`)}}
 	if err := rpc.StreamEvents(stream); status.Code(err) != codes.Unavailable || stream.response != nil {
 		t.Fatalf("publish failure acknowledged: response=%v err=%v", stream.response, err)
 	}
-	resp, err := rpc.ReportStatus(ctx, &pb.ReportStatusRequest{RunId: "run", Generation: 1, Status: "error", ErrorMessage: "event delivery failed"})
+	resp, err := rpc.ReportStatus(ctx, &pb.ReportStatusRequest{RunId: "run", Generation: 1, Status: "error", ErrorMessage: "event delivery failed", RunIncarnationId: originalRunIdentity(t, store, "run")})
 	if err != nil || resp.Superseded {
 		t.Fatal(resp, err)
 	}

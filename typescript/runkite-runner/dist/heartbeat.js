@@ -52,7 +52,7 @@ export const DEFAULT_HEARTBEAT_RPC_TIMEOUT_MS = 1000;
  * perfectly-tuned system would.
  */
 export function startHeartbeatLoop(client, runId, metadata, options = {}) {
-    const { generation = 0, onSuperseded, intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS, rpcTimeoutMs = DEFAULT_HEARTBEAT_RPC_TIMEOUT_MS, } = options;
+    const { runIncarnationId = "", generation = 0, onSuperseded, intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS, rpcTimeoutMs = DEFAULT_HEARTBEAT_RPC_TIMEOUT_MS, } = options;
     if (!Number.isFinite(rpcTimeoutMs) || rpcTimeoutMs <= 0 || rpcTimeoutMs > 2_147_483_647)
         throw new RangeError("heartbeat rpcTimeoutMs must be positive and at most 2147483647");
     let stopped = false;
@@ -89,7 +89,7 @@ export function startHeartbeatLoop(client, runId, metadata, options = {}) {
                 }, rpcTimeoutMs);
                 cancelPending = cancel;
                 try {
-                    call = client.heartbeat({ runId, generation: String(generation) }, metadata, (err, resp) => {
+                    call = client.heartbeat({ runId, runIncarnationId, generation: String(generation) }, metadata, (err, resp) => {
                         if (settled || stopped)
                             return;
                         if (err) {

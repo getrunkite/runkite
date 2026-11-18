@@ -25,7 +25,9 @@ func TestStrictApprovalDoesNotAcceptCompatibilitySubjectOrLegacySession(t *testi
 	env := newReviewFixture(t)
 	env.server.SetPolicyEngine(quorumPolicy(env, policy.ApprovalRequirements{RequiredApprovals: 2}, false))
 	ctx := tenant.ScopedContext(t.Context(), "a")
-	binding := &auth.RunBinding{RunID: uuid.NewString(), ThreadID: uuid.NewString(), TenantID: "a", AgentID: "agent", Generation: 1, User: &transport.UserContext{Identity: "requester"}}
+	binding := &auth.RunBinding{RunID: uuid.NewString(), ThreadID: uuid.NewString(), TenantID: "a", AgentID: "agent", Generation: 1, User: &transport.UserContext{Identity: "requester"}, RunIncarnationID: originalRunIdentity(t, // A pre-upgrade Redis blob carries display identity/roles but no proof.
+
+		env.store, uuid.NewString())}
 	seedManagedPendingFixture(t, env.store, binding, true)
 	_, digest, args := policy.BindArgs(json.RawMessage(`{"amount":123}`))
 	row := &models.PendingAction{ID: pendingActionIDPrefix + uuid.NewString(), RunID: binding.RunID, TenantID: "a", AgentID: "agent", Generation: 1, Connector: "files", Tool: "write", ArgsDigest: digest, Args: args, TargetRevision: currentFixtureTargetRevision(t, env.server, "files"), PolicyRevision: env.server.policy.Revision(), RequiredApprovals: 2}
@@ -39,7 +41,7 @@ func TestStrictApprovalDoesNotAcceptCompatibilitySubjectOrLegacySession(t *testi
 			t.Fatalf("compatibility subject voted on %s: %d %s", surface, response.Code, response.Body.String())
 		}
 	}
-	// A pre-upgrade Redis blob carries display identity/roles but no proof.
+
 	var legacy auth.AuthResult
 	if err := json.Unmarshal([]byte(`{"Identity":"legacy-admin","TenantID":"a","Permissions":["admin"]}`), &legacy); err != nil {
 		t.Fatal(err)
@@ -101,8 +103,8 @@ func TestManagedRequesterProofCannotComeFromRunMetadataOrA2AClaims(t *testing.T)
 	if err := json.Unmarshal(frozen, &manifest); err != nil || manifest.Principal == nil || manifest.Principal.Identity != "jwt-user" || manifest.Principal.VerifiedIdentity {
 		t.Fatalf("caller metadata promoted requester provenance: %s %v", frozen, err)
 	}
-	if _, err := env.store.BeginRunAttempt(ctx, run.RunID, 1); err != nil {
-		t.Fatal(err)
+	if accepted, err := env.store.BeginRunAttempt(ctx, run.RunID, originalRunIdentity(t, env.store, run.RunID), 1); err != nil || !accepted {
+		t.Fatal("requester provenance fixture did not begin its actual attempt", accepted, err)
 	}
 	_, digest, args := policy.BindArgs(json.RawMessage(`{"amount":123}`))
 	row := &models.PendingAction{ID: pendingActionIDPrefix + uuid.NewString(), RunID: run.RunID, TenantID: "a", AgentID: "agent", Generation: 1, Connector: "files", Tool: "write", ArgsDigest: digest, Args: args, TargetRevision: currentFixtureTargetRevision(t, env.server, "files"), PolicyRevision: env.server.policy.Revision(), ExcludeRequester: true}

@@ -39,7 +39,7 @@ func connectorActionFixture(t *testing.T, store state.Store) (context.Context, *
 	if err := store.CreateRun(ctx, &models.Run{RunID: a.RunID, ThreadID: a.ThreadID, AgentID: a.AgentID, Status: models.RunStatusPending, Metadata: map[string]interface{}{"run_manifest": map[string]interface{}{"agent_version": 7, "principal": map[string]interface{}{"identity": "alice", "verified_identity": true}}}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if accepted, err := store.BeginRunAttempt(ctx, a.RunID, a.Generation); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, a.RunID, originalRunIdentity(t, store, a.RunID), a.Generation); err != nil || !accepted {
 		t.Fatalf("begin fixture attempt: %v %v", accepted, err)
 	}
 	return ctx, a
@@ -301,7 +301,7 @@ func RunConnectorActions(t *testing.T, store state.Store) {
 		if count, err := actions.MarkExpiredConnectorActionsUnknown(ctx, time.Now().Add(3*time.Minute), 100); err != nil || count != 0 {
 			t.Fatalf("repeat sweep=%d %v", count, err)
 		}
-		if accepted, err := store.BeginRunAttempt(ctx, a.RunID, 2); err != nil || !accepted {
+		if accepted, err := store.BeginRunAttempt(ctx, a.RunID, originalRunIdentity(t, store, a.RunID), 2); err != nil || !accepted {
 			t.Fatalf("reclaim=%v %v", accepted, err)
 		}
 		got, err = actions.FinishConnectorAction(ctx, a.ID, claim.Version, claim.DispatchID, models.ConnectorActionObservation{State: models.ConnectorActionResponseObserved, ResponseKind: "rpc_error"}, uuid.NewString())
@@ -325,7 +325,7 @@ func RunConnectorActions(t *testing.T, store state.Store) {
 	t.Run("stale_dispatch_and_recreated_run", func(t *testing.T) {
 		ctx, a := create(t)
 		a = ready(t, ctx, a, "allow")
-		if _, err := store.BeginRunAttempt(ctx, a.RunID, 2); err != nil {
+		if _, err := store.BeginRunAttempt(ctx, a.RunID, originalRunIdentity(t, store, a.RunID), 2); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := actions.PrepareConnectorActionDispatch(ctx, a.ID, a.Version, "", "policy", time.Now().Add(time.Minute), uuid.NewString()); err == nil {
@@ -338,7 +338,7 @@ func RunConnectorActions(t *testing.T, store state.Store) {
 		if err := store.CreateRun(ctx, &models.Run{RunID: a.RunID, ThreadID: a.ThreadID, AgentID: a.AgentID, Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.BeginRunAttempt(ctx, a.RunID, 1); err != nil {
+		if _, err := store.BeginRunAttempt(ctx, a.RunID, originalRunIdentity(t, store, a.RunID), 1); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := actions.PrepareConnectorActionDispatch(ctx, a.ID, a.Version, "", "policy", time.Now().Add(time.Minute), uuid.NewString()); err == nil {
@@ -381,7 +381,7 @@ func RunConnectorActions(t *testing.T, store state.Store) {
 		if err := store.CreateRun(ctx, &models.Run{RunID: original.RunID, ThreadID: original.ThreadID, AgentID: original.AgentID, Status: models.RunStatusPending, CreatedAt: original.RunCreatedAt, UpdatedAt: original.RunCreatedAt}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := store.BeginRunAttempt(ctx, original.RunID, original.Generation); err != nil {
+		if _, err := store.BeginRunAttempt(ctx, original.RunID, originalRunIdentity(t, store, original.RunID), original.Generation); err != nil {
 			t.Fatal(err)
 		}
 		input := *original

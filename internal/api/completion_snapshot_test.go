@@ -16,7 +16,7 @@ func TestJSONNumbersCompletionStateAndHistoryRetainMergedValues(t *testing.T) {
 	if _, err := f.store.UpdateThread(ctx, f.threadID, &models.ThreadPatch{Values: map[string]interface{}{"prior_id": json.Number("9007199254740993")}}); err != nil {
 		t.Fatal(err)
 	}
-	if result, err := f.store.CompleteRun(ctx, &state.RunCompletion{RunID: f.runID, Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "current"}}); err != nil || !result.Applied {
+	if result, err := f.store.CompleteRun(ctx, withOriginalCompletion(t, f.store, &state.RunCompletion{RunID: f.runID, Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "current"}})); err != nil || !result.Applied {
 		t.Fatal(result, err)
 	}
 	for _, suffix := range []string{"", "/state", "/history"} {

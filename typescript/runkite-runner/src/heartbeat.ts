@@ -54,6 +54,7 @@ export interface HeartbeatHandle {
 }
 
 export interface HeartbeatLoopOptions {
+  runIncarnationId?: string;
   /** Echo the token from GetJob. The default zero matches only a legacy
    * generation-zero assignment; it never disables current-attempt fencing. */
   generation?: number;
@@ -83,6 +84,7 @@ export function startHeartbeatLoop(
   options: HeartbeatLoopOptions = {},
 ): HeartbeatHandle {
   const {
+    runIncarnationId = "",
     generation = 0,
     onSuperseded,
     intervalMs = DEFAULT_HEARTBEAT_INTERVAL_MS,
@@ -121,16 +123,20 @@ export function startHeartbeatLoop(
         }, rpcTimeoutMs);
         cancelPending = cancel;
         try {
-          call = client.heartbeat({ runId, generation: String(generation) }, metadata, (err, resp) => {
-            if (settled || stopped) return;
-            if (err) {
-              logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
-              const code = "code" in err ? err.code : undefined;
-              finish(code === grpcStatus.UNAUTHENTICATED || code === grpcStatus.PERMISSION_DENIED);
-            } else {
-              finish(resp.superseded);
-            }
-          });
+          call = client.heartbeat(
+            { runId, runIncarnationId, generation: String(generation) },
+            metadata,
+            (err, resp) => {
+              if (settled || stopped) return;
+              if (err) {
+                logger.warn(`Heartbeat RPC failed for run ${runId}:`, err.message);
+                const code = "code" in err ? err.code : undefined;
+                finish(code === grpcStatus.UNAUTHENTICATED || code === grpcStatus.PERMISSION_DENIED);
+              } else {
+                finish(resp.superseded);
+              }
+            },
+          );
         } catch (err) {
           logger.warn(`Unexpected heartbeat error for run ${runId}:`, err);
           finish(false);

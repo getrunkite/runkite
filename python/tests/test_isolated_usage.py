@@ -77,7 +77,7 @@ class IsolatedUsageTests(unittest.IsolatedAsyncioTestCase):
             "https://plane.invalid", "pool-fixture", "synthetic-token", transport=httpx.MockTransport(respond)
         )
         tenant = bind_tenant("acme")
-        run = bind_run("custom/run", 7)
+        run = bind_run("custom/run", 7, run_incarnation_id="record-fixture")
         try:
             report = {
                 "schema_version": 1,

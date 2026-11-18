@@ -95,6 +95,10 @@
           The operations below apply to your own self-hosted control plane.
         </p>
 
+        <h2 id="assignment-identity-upgrade">Assignment identity and finalization upgrade (Unreleased)</h2>
+        <p>Stop submissions and cron dispatch, drain queued/inflight assignments and every writer, and verify database, queue and receipt backups. Apply <code>runkite db upgrade</code> with the new plane: Postgres/SQLite migration 23 or MySQL migration 24 adds original-record binding to usage events and holds. Startup also migrates. SQLite rebuilds the usage-events table; MySQL DDL commits implicitly. Keep writers stopped on failure and complete the upgrade before traffic resumes. Downgrade is refused; restore a reviewed backup and reconcile accounting if rollback is required.</p>
+        <p>Deploy matching planes, runners and custom stores together. Required worker capability 1 has no missing-proof fallback. Custom stores need the original-record usage/hold and terminal-hook capabilities used by their deployment. Legacy unbound accounting, bare hook claims and same-ID receipts stay intact. A collision can leave accounting or hook finalization unconfirmed even when the result is terminal. Reconcile operation, usage, reservation and delivery evidence explicitly; use fresh operation IDs for intentional new work. Do not bulk-delete or guess identities to bypass the refusal. See the <a href="runner-auth.html#assignment-identity">runner contract</a>, <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#assignment-identity-upgrade">complete operator procedure</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/atomic-results-and-identities.md#original-record-finalization-unreleased">finalization design</a>. Published v0.9.0 artifacts retain their released contract.</p>
+
         <h2>What happens when a runner crashes mid-job</h2>
         <p>
           Every dispatched job has a live heartbeat, the runner pings the plane roughly

@@ -43,7 +43,7 @@ func TestStrictPendingAuthorityRequiresDurableVerifiedRequesterAtEveryTransition
 	if err := s.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: initial, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
 	row := &models.PendingAction{ID: uuid.NewString(), TenantID: "acme", AgentID: "agent", RunID: "run", Generation: 1, Connector: "fixture", Tool: "write", ArgsDigest: strings.Repeat("a", 64), TargetRevision: testPendingTargetRevision, PolicyRevision: testPendingPolicyRevision, ExcludeRequester: true}

@@ -165,7 +165,7 @@ def test_opaque_client_get_put():
         from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
 
         tt = bind_tenant("default")
-        rt = bind_run("run-1", 1)
+        rt = bind_run("run-1", 1, run_incarnation_id="record-fixture")
         try:
             client = OpaqueCheckpointClient(
                 http_base_url="http://cp.test",
@@ -202,7 +202,7 @@ def test_get_ignores_lexicographically_newer_langgraph_blob():
         from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant
 
         tt = bind_tenant("default")
-        rt = bind_run("run-1", 1)
+        rt = bind_run("run-1", 1, run_incarnation_id="record-fixture")
         try:
             client = OpaqueCheckpointClient(
                 http_base_url="http://cp.test",
@@ -260,10 +260,16 @@ def test_execute_rejects_corrupt_prepare():
             return OpaqueCheckpointClient(**kwargs, transport=transport)
 
         tt = bind_tenant("default")
-        rt = bind_run("run-c", 1)
+        rt = bind_run("run-c", 1, run_incarnation_id="record-fixture")
         try:
             raw = {"messages": [{"role": "human", "content": "only-new"}]}
-            a = {"run_id": "run-c", "thread_id": "thr_y", "graph_id": "g", "input": raw}
+            a = {
+                "run_id": "run-c",
+                "thread_id": "thr_y",
+                "graph_id": "g",
+                "input": raw,
+                "run_incarnation_id": "record-fixture",
+            }
 
             events = []
 
@@ -514,13 +520,14 @@ def test_execute_with_opaque_two_turns():
             return OpaqueCheckpointClient(**kwargs, transport=transport)
 
         tt = bind_tenant("default")
-        rt = bind_run("run-a", 1)
+        rt = bind_run("run-a", 1, run_incarnation_id="record-fixture")
         try:
             a1 = {
                 "run_id": "run-a",
                 "thread_id": "thr_x",
                 "graph_id": "g",
                 "input": {"messages": [{"role": "human", "content": "one"}]},
+                "run_incarnation_id": "record-fixture",
             }
             st1 = await _execute_with_opaque_checkpoint(
                 adapter,
@@ -542,13 +549,14 @@ def test_execute_with_opaque_two_turns():
             reset_tenant(tt)
 
         tt = bind_tenant("default")
-        rt = bind_run("run-b", 1)
+        rt = bind_run("run-b", 1, run_incarnation_id="record-fixture")
         try:
             a2 = {
                 "run_id": "run-b",
                 "thread_id": "thr_x",
                 "graph_id": "g",
                 "input": {"messages": [{"role": "human", "content": "two"}]},
+                "run_incarnation_id": "record-fixture",
             }
             st2 = await _execute_with_opaque_checkpoint(
                 adapter,
@@ -629,7 +637,7 @@ def test_execute_opaque_survives_fresh_client():
             return c
 
         tt = bind_tenant("default")
-        rt = bind_run("run-restart-a", 1)
+        rt = bind_run("run-restart-a", 1, run_incarnation_id="record-fixture")
         try:
 
             async def send1(_e):
@@ -642,6 +650,7 @@ def test_execute_opaque_survives_fresh_client():
                     "thread_id": "thr_restart",
                     "graph_id": "g",
                     "input": {"messages": [{"role": "human", "content": "one"}]},
+                    "run_incarnation_id": "record-fixture",
                 },
                 send1,
                 asyncio.Event(),
@@ -675,7 +684,7 @@ def test_execute_opaque_survives_fresh_client():
             events2.append(e)
 
         tt = bind_tenant("default")
-        rt = bind_run("run-restart-b", 1)
+        rt = bind_run("run-restart-b", 1, run_incarnation_id="record-fixture")
         try:
             st2 = await _execute_with_opaque_checkpoint(
                 adapter,
@@ -684,6 +693,7 @@ def test_execute_opaque_survives_fresh_client():
                     "thread_id": "thr_restart",
                     "graph_id": "g",
                     "input": {"messages": [{"role": "human", "content": "two"}]},
+                    "run_incarnation_id": "record-fixture",
                 },
                 send2,
                 asyncio.Event(),

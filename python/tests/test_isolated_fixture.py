@@ -6,15 +6,18 @@ import json
 import os
 import shutil
 import ssl
+import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "python"))
 
 
 def load_source(name, path):
@@ -82,6 +85,8 @@ class FixtureCleanupTests(unittest.TestCase):
                 self.assertTrue(self.directory.exists())
 
     def test_accepted_delete_still_requires_disappearance_confirmation(self):
+        clock = [0]
+
         def execute(args, **kwargs):
             value = self.command(args, **kwargs)
             if "list" in args:
@@ -90,13 +95,37 @@ class FixtureCleanupTests(unittest.TestCase):
 
         with (
             patch.object(fixture.subprocess, "run", side_effect=execute),
-            patch.object(fixture.time, "monotonic", side_effect=[0, 0, 2]),
-            patch.object(fixture.time, "sleep"),
+            patch.object(fixture.time, "monotonic", side_effect=lambda: clock[0]),
+            patch.object(fixture.time, "sleep", side_effect=lambda _: clock.__setitem__(0, 2)),
         ):
             result = fixture.cleanup_fixture(self.base, self.cli, io.BytesIO(), self.directory, timeout=1)
         self.assertFalse(result["confirmed"])
         self.assertIn("runtime_delete_not_confirmed", result["reason_codes"])
         self.assertTrue(self.directory.exists())
+
+    def test_per_delete_deadline_reserves_time_for_owned_infrastructure_removal(self):
+        clock, deletes = [0.0], []
+
+        def execute(args, **kwargs):
+            value = self.command(args, **kwargs)
+            if "list" in args:
+                value.stdout = json.dumps({"sandboxes": [{"name": "rk-" + char * 16} for char in "abc"]})
+                clock[0] += 0.25
+            if "delete" in args:
+                deletes.append(kwargs["timeout"])
+                clock[0] += kwargs["timeout"]
+            return value
+
+        with (
+            patch.object(fixture.subprocess, "run", side_effect=execute),
+            patch.object(fixture.time, "monotonic", side_effect=lambda: clock[0]),
+        ):
+            result = fixture.cleanup_fixture(self.base, self.cli, io.BytesIO(), self.directory, timeout=1)
+        self.assertEqual(deletes, [0.75])
+        self.assertFalse(result["confirmed"])
+        self.assertTrue(self.directory.exists())
+        self.assertTrue(any("down" in command for command in self.calls))
+        self.assertTrue(any("ps" in command for command in self.calls))
 
     def test_unrecognized_or_incomplete_records_are_never_broadly_deleted(self):
         for listing in (
@@ -211,7 +240,10 @@ class FixtureCleanupTests(unittest.TestCase):
                     self.assertEqual(metadata["network_profile"], "linux-host-loopback")
                 build = next(call for call in build_image.call_args_list if "build" in call.args[0])
                 self.assertEqual(build.args[0][:3], ["docker", "--host", "unix://" + str(socket_file)])
-                self.assertEqual(Path(build.kwargs["env"]["BUILDX_CONFIG"]).resolve(), (runtime / "buildx").resolve())
+                self.assertEqual(
+                    Path(build.kwargs["env"]["BUILDX_CONFIG"]).resolve(), (runtime / "environment/buildx").resolve()
+                )
+                self.assertEqual(guard.wait.call_args_list[0].kwargs["timeout"], 905)
 
     def test_managed_e2e_cleanup_failure_fails_unittest_after_writing_evidence(self):
         managed = load_source("isolated_managed_cleanup_contract", ROOT / "test/e2e/isolated/test_managed.py")
@@ -223,6 +255,7 @@ class FixtureCleanupTests(unittest.TestCase):
         case.policy, case.gateway, case.directory = self.directory / "policy", "http://127.0.0.1:12345", self.directory
         runtime = SimpleNamespace(cleanup=AsyncMock(return_value=False))
         output = self.directory / "evidence.json"
+        case.inputs = {"RUNKITE_TEST_ISOLATED_OUTPUT": str(output)}
         with (
             patch("runkite_runner.isolated.OpenShellRuntime", return_value=runtime),
             patch.dict(os.environ, {"RUNKITE_TEST_ISOLATED_OUTPUT": str(output)}),
@@ -230,6 +263,105 @@ class FixtureCleanupTests(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "cleanup was not confirmed"):
                 case.cleanup()
         self.assertFalse(json.loads(output.read_text())["passed"])
+
+
+class ManagedAssignmentProofTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.managed = load_source("isolated_managed_assignment_contract", ROOT / "test/e2e/isolated/test_managed.py")
+
+    def setUp(self):
+        self.case = self.managed.ManagedIsolatedE2E("test_managed_runtime_lifecycle")
+        self.case.lock = threading.Lock()
+        self.case.run_proofs = {}
+        self.case.owned_run_ids = {"owned-run"}
+        self.case.runner_token = "synthetic-runner-token"
+        self.headers = {"X-Runkite-Run-Id": "owned-run", "X-Runkite-Run-Incarnation": "original-record"}
+
+    def observe(self, headers=None, **options):
+        self.case.observe_assignment_proof(
+            options.get("method", "GET"),
+            options.get("path", "/internal/runs/owned-run/status"),
+            self.headers if headers is None else headers,
+            options.get("status", 200),
+        )
+
+    def test_only_successful_owned_preflight_can_supply_the_original_proof(self):
+        for options in (
+            {"status": 401},
+            {"status": 403},
+            {"status": 500},
+            {"method": "POST"},
+            {"path": "/internal/runs/owned-run/usage"},
+            {"path": "/internal/runs/owned-run/status?ignored=1"},
+        ):
+            with self.subTest(options=options):
+                self.observe(**options)
+                self.assertEqual(self.case.run_proofs, {})
+        self.case.observe_assignment_proof(
+            "GET",
+            "/internal/runs/foreign-run/status",
+            {**self.headers, "X-Runkite-Run-Id": "foreign-run"},
+            200,
+        )
+        self.assertEqual(self.case.run_proofs, {})
+        self.observe()
+        self.assertEqual(self.case.bound_headers("owned-run")["X-Runkite-Run-Incarnation"], "original-record")
+
+    def test_missing_proof_never_sends_a_probe_or_reads_a_replacement(self):
+        self.case.request = Mock(side_effect=AssertionError("no public record read expected"))
+        self.case.client_for = Mock(side_effect=AssertionError("no unbound probe expected"))
+        self.assertIsNone(self.case.state("owned-thread", "owned-run"))
+        with self.assertRaisesRegex(AssertionError, "original assignment proof has not been observed"):
+            self.case.bound_headers("owned-run")
+        self.case.request.assert_not_called()
+        self.case.client_for.assert_not_called()
+
+    def test_malformed_or_replacement_proof_cannot_replace_the_original(self):
+        for proof in (None, "", "bad record", "bad\nrecord", "é", "x" * 257):
+            with self.subTest(proof=proof):
+                with self.assertRaisesRegex(AssertionError, "no valid original record proof"):
+                    self.observe({**self.headers, "X-Runkite-Run-Incarnation": proof})
+                self.assertEqual(self.case.run_proofs, {})
+        self.observe()
+        with self.assertRaisesRegex(AssertionError, "fixture run record identity changed"):
+            self.observe({**self.headers, "X-Runkite-Run-Incarnation": "replacement-record"})
+        self.assertEqual(self.case.run_proofs, {"owned-run": "original-record"})
+
+    def test_checkpoint_and_stale_generation_headers_keep_the_observed_record(self):
+        self.observe()
+        self.case.base = "https://127.0.0.1:12345"
+        self.case.parent_identity = "a"
+        self.case.request = Mock(
+            return_value={"metadata": {"_runkite_attempt_generation": 9}, "incarnation_id": "replacement-record"}
+        )
+        client = Mock()
+        client.get.return_value = SimpleNamespace(status_code=200, json=lambda: {"intent": {"generation": 9}})
+        self.case.client_for = Mock(return_value=client)
+        self.assertEqual(self.case.state("owned-thread", "owned-run"), {"intent": {"generation": 9}})
+        headers = client.get.call_args.kwargs["headers"]
+        self.assertEqual(headers["X-Runkite-Run-Incarnation"], "original-record")
+        self.assertEqual(headers["X-Runkite-Generation"], "9")
+        stale_headers = self.case.bound_headers("owned-run", 1)
+        self.assertEqual(stale_headers["X-Runkite-Run-Incarnation"], "original-record")
+        self.assertEqual(stale_headers["X-Runkite-Generation"], "1")
+
+    def test_run_is_owned_before_the_installed_worker_can_preflight(self):
+        def create(path, body):
+            self.assertEqual(path, "/threads/owned-thread/runs")
+            run = body["run_id"]
+            self.assertIn(run, self.case.owned_run_ids)
+            self.case.observe_assignment_proof(
+                "GET",
+                f"/internal/runs/{run}/status",
+                {**self.headers, "X-Runkite-Run-Id": run},
+                200,
+            )
+            return {"run_id": run}
+
+        self.case.request = create
+        run = self.case.create_run("owned-thread", {"text": "synthetic"})
+        self.assertEqual(self.case.bound_headers(run)["X-Runkite-Run-Incarnation"], "original-record")
 
 
 class FixtureNetworkTests(unittest.TestCase):
@@ -457,3 +589,340 @@ class WorkloadProbeTests(unittest.TestCase):
             with self.subTest(expected=expected), patch.object(self.workload, "Path", return_value=path):
                 path.lstat.side_effect = error
                 self.assertEqual(self.workload.socket_path_status("synthetic-socket"), expected)
+
+
+def load_managed_helpers():
+    selected = importlib.util.spec_from_file_location(
+        "isolated_managed_security_helpers", ROOT / "test/e2e/isolated/test_managed.py"
+    )
+    module = importlib.util.module_from_spec(selected)
+    selected.loader.exec_module(module)
+    return module
+
+
+class ManagedFixtureSecurityTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.managed = load_managed_helpers()
+
+    def test_gateway_tls_copy_uses_only_explicit_owned_bundle_and_private_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            gateway = "https://127.0.0.1:1234"
+            relative = Path("openshell/gateways/https___127.0.0.1_1234/mtls")
+            source = root / "owned-config"
+            (source / relative).mkdir(parents=True)
+            for name in ("ca.crt", "tls.crt", "tls.key"):
+                (source / relative / name).write_text("synthetic " + name)
+            (source / "unrelated-user-config").write_text("synthetic unrelated secret")
+            destination = root / "child-config"
+            self.managed.copy_gateway_tls_bundle(source, destination, gateway)
+            for name in ("ca.crt", "tls.crt", "tls.key"):
+                copied = destination / relative / name
+                self.assertEqual(copied.read_text(), "synthetic " + name)
+                self.assertEqual(stat.S_IMODE(copied.stat().st_mode), 0o600)
+            self.assertFalse((destination / "unrelated-user-config").exists())
+            (source / relative / "tls.key").unlink()
+            (source / relative / "tls.key").symlink_to(root / "outside-key")
+            (root / "outside-key").write_text("synthetic outside key")
+            with self.assertRaises(AssertionError):
+                self.managed.copy_gateway_tls_bundle(source, root / "other-child", gateway)
+
+    def test_cancellation_absence_is_read_only_scoped_and_requires_complete_listing(self):
+        sandbox = "rk-" + "a" * 16
+        calls = []
+        responses = [
+            subprocess.CompletedProcess([], 0, json.dumps({"sandboxes": [{"metadata": {"name": sandbox}}]}).encode()),
+            subprocess.CompletedProcess([], 0, b'{"sandboxes":[]}'),
+        ]
+
+        def execute(command, **kwargs):
+            calls.append((command, kwargs))
+            return responses.pop(0)
+
+        with (
+            patch.object(self.managed.subprocess, "run", side_effect=execute),
+            patch.object(self.managed.time, "sleep"),
+        ):
+            elapsed = self.managed.wait_for_owned_sandbox_absence(
+                "/owned/openshell", "https://127.0.0.1:1234", sandbox, {"HOME": "/owned/home"}, timeout=1
+            )
+        self.assertGreaterEqual(elapsed, 0)
+        self.assertEqual(len(calls), 2)
+        for command, kwargs in calls:
+            self.assertIn("list", command)
+            self.assertEqual(command[-2:], ["--selector", "runkite_attempt=" + sandbox])
+            self.assertNotIn("delete", command)
+            self.assertEqual(kwargs["env"], {"HOME": "/owned/home"})
+            self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
+            self.assertLessEqual(kwargs["timeout"], 1)
+        for listing in (
+            {"sandboxes": [], "next_page_token": "incomplete"},
+            {"sandboxes": [{"name": "unrelated"}]},
+            {"sandboxes": "invalid"},
+        ):
+            result = subprocess.CompletedProcess([], 0, json.dumps(listing).encode())
+            with patch.object(self.managed.subprocess, "run", return_value=result), self.assertRaises(AssertionError):
+                self.managed.wait_for_owned_sandbox_absence(
+                    "/owned/openshell", "https://127.0.0.1:1234", sandbox, {}, timeout=1
+                )
+
+    def test_gateway_failure_or_retained_sandbox_never_becomes_cancellation_success(self):
+        sandbox = "rk-" + "a" * 16
+        for response in (
+            subprocess.CompletedProcess([], 1, b"synthetic-private-error"),
+            subprocess.CompletedProcess([], 0, json.dumps({"sandboxes": [{"name": sandbox}]}).encode()),
+        ):
+            with (
+                patch.object(self.managed.subprocess, "run", return_value=response),
+                patch.object(self.managed.time, "sleep"),
+                patch.object(self.managed.time, "monotonic", side_effect=[0, 0, 0, 0, 2, 2]),
+                self.assertRaisesRegex(AssertionError, "before fixture teardown"),
+            ):
+                self.managed.wait_for_owned_sandbox_absence(
+                    "/owned/openshell", "https://127.0.0.1:1234", sandbox, {}, timeout=1
+                )
+
+    def test_cancellation_requires_an_exact_owned_name_before_any_cli_call(self):
+        with patch.object(self.managed.subprocess, "run") as execute, self.assertRaises(AssertionError):
+            self.managed.wait_for_owned_sandbox_absence(
+                "/owned/openshell", "https://127.0.0.1:1234", "unrelated", {}, timeout=1
+            )
+        execute.assert_not_called()
+
+
+class LiveGenerationProbeTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.managed = load_managed_helpers()
+
+    def invoke(self, *, failure=None):
+        import httpx
+
+        case = self.managed.ManagedIsolatedE2E("test_managed_runtime_lifecycle")
+        case.parent_identity = "a"
+        case.api_key = "synthetic"
+        case.runner_token = "synthetic-runner"
+        case.lock = threading.Lock()
+        case.run_proofs = {"run": "original-record"}
+        case.bases = ["https://plane-a.invalid", "https://plane-b.invalid"]
+        case.evidence = {"live_generation_observations": []}
+        snapshot = {
+            "schema_version": 1,
+            "sequence": 2,
+            "status": "reported",
+            "complete": False,
+            "prompt_tokens": 7,
+            "completion_tokens": 3,
+            "source": "isolated_workload",
+            "reported_generation": 4,
+        }
+        calls = []
+
+        def handle(request):
+            calls.append(request)
+            path = request.url.path
+            generation = request.headers.get("X-Runkite-Generation")
+            if path.startswith("/threads/"):
+                return httpx.Response(
+                    200,
+                    json={
+                        "status": "success" if failure == "terminal" else "running",
+                        "metadata": {"_runkite_attempt_generation": 4},
+                    },
+                )
+            self.assertEqual(request.headers.get("X-Runkite-Run-Incarnation"), "original-record")
+            if generation != "4":
+                return httpx.Response(403, json={"reason_code": "run_generation_mismatch"})
+            if path.endswith("/usage"):
+                if failure == "current_usage_denied":
+                    return httpx.Response(403)
+                return httpx.Response(200, json={"snapshot": snapshot})
+            return httpx.Response(
+                200,
+                json={
+                    "intent": {
+                        "generation": 4,
+                        "run_id": "run",
+                        "run_incarnation_id": "wrong-record" if failure == "wrong_record" else "original-record",
+                    }
+                },
+                headers={
+                    "ETag": 'W/"2"' if failure == "weak_etag" else '"2"',
+                    "X-Runkite-Checkpoint-Framework": "isolated-v1",
+                },
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(handle)) as client:
+            case.http = client
+            case.client_for = lambda _: client
+            if failure:
+                with self.assertRaises(AssertionError):
+                    case.qualify_live_generation_denials("thread", "run", snapshot)
+                self.assertEqual(case.evidence["live_generation_observations"], [])
+            else:
+                case.qualify_live_generation_denials("thread", "run", snapshot)
+        return case.evidence, calls
+
+    def test_live_positive_controls_precede_mismatched_generation_writes(self):
+        evidence, calls = self.invoke()
+        self.assertEqual(len(evidence["live_generation_observations"]), 1)
+        row = evidence["live_generation_observations"][0]
+        self.assertEqual((row["generation"], row["mismatched_generation"]), (4, 3))
+        self.assertEqual(
+            (row["usage_idempotent_post"], row["usage_mismatched_post"], row["checkpoint_mismatched_put"]),
+            (200, 403, 403),
+        )
+        self.assertTrue(row["checkpoint_unchanged"] and row["usage_unchanged"])
+        writes = [
+            (r.method, r.url.path, r.headers.get("X-Runkite-Generation")) for r in calls if r.method in {"POST", "PUT"}
+        ]
+        self.assertEqual(
+            writes,
+            [
+                ("POST", "/internal/runs/run/usage", "4"),
+                ("POST", "/internal/runs/run/usage", "3"),
+                ("PUT", "/internal/checkpoints/thread/adapter-state", "3"),
+            ],
+        )
+
+    def test_terminal_run_denied_positive_control_or_weak_etag_cannot_claim_success(self):
+        for failure in ("terminal", "current_usage_denied", "weak_etag", "wrong_record"):
+            with self.subTest(failure=failure):
+                self.invoke(failure=failure)
+
+
+class ManagedCancellationPositiveControlTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.managed = load_managed_helpers()
+
+    def test_presence_requires_exact_nonempty_complete_read_only_listing(self):
+        sandbox = "rk-" + "a" * 16
+        result = subprocess.CompletedProcess([], 0, json.dumps({"sandboxes": [{"name": sandbox}]}).encode())
+        with patch.object(self.managed.subprocess, "run", return_value=result) as execute:
+            self.managed.wait_for_owned_sandbox_presence(
+                "/owned/openshell", "https://127.0.0.1:1234", sandbox, {}, timeout=1
+            )
+        self.assertIn("list", execute.call_args.args[0])
+        self.assertNotIn("delete", execute.call_args.args[0])
+        self.assertEqual(execute.call_args.args[0][-1], "runkite_attempt=" + sandbox)
+        for listing in (
+            {"sandboxes": []},
+            {"sandboxes": [{"name": "unrelated"}]},
+            {"sandboxes": [{"name": sandbox}], "next_page_token": "incomplete"},
+        ):
+            value = subprocess.CompletedProcess([], 0, json.dumps(listing).encode())
+            with (
+                self.subTest(listing=listing),
+                patch.object(self.managed.subprocess, "run", return_value=value),
+                patch.object(self.managed.time, "sleep"),
+                patch.object(self.managed.time, "monotonic", side_effect=[0, 0, 0, 0, 2, 2]),
+                self.assertRaises(AssertionError),
+            ):
+                self.managed.wait_for_owned_sandbox_presence(
+                    "/owned/openshell", "https://127.0.0.1:1234", sandbox, {}, timeout=1
+                )
+
+    def invoke(self, failure=None):
+        case = self.managed.ManagedIsolatedE2E("test_managed_runtime_lifecycle")
+        case.cli, case.gateway, case.environment = "/owned/openshell", "https://127.0.0.1:1234", {}
+        case.runner_token = "synthetic-runner"
+        case.lock = threading.Lock()
+        case.run_proofs = {"run": "original-record"}
+        sandbox = "rk-" + "a" * 16
+        case.runtime_names = {sandbox}
+        case.evidence = {"cancellation_observations": []}
+        report = {
+            "reported_generation": 4,
+            "source": "isolated_workload",
+            "status": "reported",
+            "complete": False,
+            "prompt_tokens": 5,
+            "completion_tokens": 2,
+        }
+        intent = {
+            "intent": {"run_id": "run", "run_incarnation_id": "original-record", "generation": 4, "sandbox": sandbox}
+        }
+        events = []
+        cancelled = False
+        live_reads = 0
+
+        def request(path, body=None, **kwargs):
+            nonlocal cancelled, live_reads
+            if path.endswith("/cancel"):
+                events.append("cancel")
+                cancelled = True
+                return None
+            if not cancelled:
+                live_reads += 1
+            status = "interrupted" if cancelled else "success" if failure == "not_live" else "running"
+            generation = (
+                5
+                if failure == "wrong_live_generation" or (failure == "changed_after_presence" and live_reads > 1)
+                else 4
+            )
+            return {"status": status, "metadata": {"_runkite_attempt_generation": generation}}
+
+        case.request = request
+
+        def presence(*args, **kwargs):
+            events.append("presence")
+            if failure in {"empty_presence", "foreign_presence", "incomplete_presence"}:
+                raise AssertionError("owned selector presence not established")
+            return 0.001
+
+        def absence(*args, **kwargs):
+            events.append("absence")
+            return 0.002
+
+        if failure == "no_activity":
+            report["source"] = "unknown"
+        if failure == "wrong_report_generation":
+            report["reported_generation"] = 3
+        if failure == "wrong_original_record":
+            intent["intent"]["run_incarnation_id"] = "replacement-record"
+        with (
+            patch.object(self.managed, "wait_for_owned_sandbox_presence", side_effect=presence),
+            patch.object(self.managed, "wait_for_owned_sandbox_absence", side_effect=absence),
+        ):
+            if failure:
+                with self.assertRaises(AssertionError):
+                    case.cancel_active_workload("thread", "run", report, intent, 5, 2)
+                self.assertNotIn("cancel", events)
+                self.assertNotIn("absence", events)
+                self.assertIn(sandbox, case.runtime_names)
+                self.assertEqual(case.evidence["cancellation_observations"], [])
+            else:
+                case.cancel_active_workload("thread", "run", report, intent, 5, 2)
+                self.assertEqual(events, ["presence", "cancel", "absence"])
+                self.assertNotIn(sandbox, case.runtime_names)
+                row = case.evidence["cancellation_observations"][0]
+                for key in (
+                    "observed_present_before_cancel",
+                    "run_live_before_presence",
+                    "run_live_after_presence",
+                    "generation_matched_before_cancel",
+                    "workload_activity_observed",
+                    "observed_absent_before_teardown",
+                ):
+                    self.assertIs(row[key], True)
+                self.assertEqual((row["activity_prompt_tokens"], row["activity_completion_tokens"]), (5, 2))
+
+    def test_cancel_follows_activity_live_generation_and_proven_presence(self):
+        self.invoke()
+
+    def test_cancel_never_issued_without_presence_activity_and_matching_live_generation(self):
+        for failure in (
+            "empty_presence",
+            "foreign_presence",
+            "incomplete_presence",
+            "no_activity",
+            "not_live",
+            "wrong_live_generation",
+            "wrong_report_generation",
+            "wrong_original_record",
+            "changed_after_presence",
+        ):
+            with self.subTest(failure=failure):
+                self.invoke(failure)

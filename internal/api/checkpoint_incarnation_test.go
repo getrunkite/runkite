@@ -53,7 +53,7 @@ func TestOpaqueCheckpointWriteRejectsRecreatedRunAfterAuthorization(t *testing.T
 	unblock := func() { once.Do(func() { close(body.release) }) }
 	defer unblock()
 	request := httptest.NewRequest(http.MethodPut, "/internal/checkpoints/checkpoint-thread/adapter-state", body)
-	request.Header.Set(auth.HeaderRunID, "checkpoint-run")
+	request.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, store, request.Header, auth.HeaderRunID, "checkpoint-run"))
 	request.Header.Set(auth.HeaderGeneration, "1")
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -63,7 +63,7 @@ func TestOpaqueCheckpointWriteRejectsRecreatedRunAfterAuthorization(t *testing.T
 	case <-time.After(5 * time.Second):
 		t.Fatal("old request did not reach body read")
 	}
-	if result, err := store.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: "checkpoint-run", Generation: 1, Status: models.RunStatusSuccess}); err != nil || !result.Applied {
+	if result, err := store.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{TrustedSystem: true, RunID: "checkpoint-run", Generation: 1, Status: models.RunStatusSuccess})); err != nil || !result.Applied {
 		t.Fatal(result, err)
 	}
 	if err := store.DeleteRun(ctx, "checkpoint-run"); err != nil {
@@ -76,7 +76,7 @@ func TestOpaqueCheckpointWriteRejectsRecreatedRunAfterAuthorization(t *testing.T
 		t.Fatal("replacement did not get a fresh durable incarnation")
 	}
 	current := httptest.NewRequest(http.MethodPut, request.URL.String(), bytes.NewBufferString("current"))
-	current.Header.Set(auth.HeaderRunID, "checkpoint-run")
+	current.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, store, current.Header, auth.HeaderRunID, "checkpoint-run"))
 	current.Header.Set(auth.HeaderGeneration, "1")
 	currentResponse := httptest.NewRecorder()
 	handler.ServeHTTP(currentResponse, current)
@@ -126,7 +126,7 @@ func TestOpaqueCheckpointDeleteRejectsRecreatedRunAfterAuthorization(t *testing.
 	})
 	handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, next)
 	request := httptest.NewRequest(http.MethodDelete, "/internal/checkpoints/checkpoint-thread/adapter-state", nil)
-	request.Header.Set(auth.HeaderRunID, "checkpoint-run")
+	request.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, store, request.Header, auth.HeaderRunID, "checkpoint-run"))
 	request.Header.Set(auth.HeaderGeneration, "1")
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
@@ -136,7 +136,7 @@ func TestOpaqueCheckpointDeleteRejectsRecreatedRunAfterAuthorization(t *testing.
 	case <-time.After(5 * time.Second):
 		t.Fatal("old DELETE did not pass authorization")
 	}
-	if result, err := store.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: old.RunID, Generation: 1, Status: models.RunStatusSuccess}); err != nil || !result.Applied {
+	if result, err := store.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{TrustedSystem: true, RunID: old.RunID, Generation: 1, Status: models.RunStatusSuccess})); err != nil || !result.Applied {
 		t.Fatal(result, err)
 	}
 	if err := store.DeleteRun(ctx, old.RunID); err != nil {
@@ -167,16 +167,45 @@ func TestOpaqueCheckpointMutationsRequireCapturedRecordIdentity(t *testing.T) {
 	store, queue, broker, cancel := completionFixture(t)
 	plane := api.NewServer(store, queue, broker, cancel)
 	ctx := tenant.WithContext(t.Context(), "default")
-	if accepted, err := store.BeginRunAttempt(ctx, "run", 1); err != nil || !accepted {
+	if accepted, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil || !accepted {
 		t.Fatal(accepted, err)
 	}
 	if _, err := store.PutOpaqueCheckpoint(ctx, "thread", "adapter-state", []byte("saved"), "test", nil); err != nil {
 		t.Fatal(err)
 	}
-	ctx = auth.WithRunBinding(ctx, &auth.RunBinding{RunID: "run", ThreadID: "thread", Generation: 1, TenantID: "default"})
+	identity := originalRunIdentity(t, store, "run")
+	lookup := authInflight(map[string]*transport.RunAssignment{
+		"run": {RunID: "run", RunIncarnationID: identity, ThreadID: "thread", GraphID: "agent", TenantID: "default", Generation: 1},
+	})
+	requestFor := func(method string) *http.Request {
+		request := httptest.NewRequest(method, "/internal/checkpoints/thread/adapter-state", bytes.NewBufferString("saved"))
+		request.Header.Set(auth.HeaderRunID, "run")
+		request.Header.Set(auth.HeaderRunIncarnation, identity)
+		request.Header.Set(auth.HeaderGeneration, "1")
+		return request
+	}
+	// Prove these exact headers pass authentication and the checkpoint fence
+	// before simulating a proxy that loses the captured original record.
+	valid := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, plane.Handler())
+	positive := httptest.NewRecorder()
+	valid.ServeHTTP(positive, requestFor(http.MethodPut))
+	if positive.Code != http.StatusNoContent {
+		t.Fatalf("matching original record rejected: %d %s", positive.Code, positive.Body)
+	}
+	stripped := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		binding := auth.RunBindingFromContext(r.Context())
+		if binding == nil || binding.RunIncarnationID != identity {
+			t.Error("request did not reach proxy with its original record binding")
+			http.Error(w, "invalid test binding", http.StatusInternalServerError)
+			return
+		}
+		copy := *binding
+		copy.RunIncarnationID = ""
+		plane.Handler().ServeHTTP(w, r.WithContext(auth.WithRunBinding(r.Context(), &copy)))
+	}))
 	for _, method := range []string{http.MethodPut, http.MethodDelete} {
 		response := httptest.NewRecorder()
-		plane.Handler().ServeHTTP(response, httptest.NewRequest(method, "/internal/checkpoints/thread/adapter-state", bytes.NewBufferString("unbound")).WithContext(ctx))
+		stripped.ServeHTTP(response, requestFor(method))
 		var denial map[string]string
 		if err := json.Unmarshal(response.Body.Bytes(), &denial); err != nil || response.Code != http.StatusForbidden || denial["reason_code"] != auth.ReasonRunBindingRequired {
 			t.Fatalf("missing record identity accepted: %d %s error=%v", response.Code, response.Body, err)

@@ -39,28 +39,28 @@ func TestPoolGetJobRejectsForeignScopeBeforeInputAndAttempt(t *testing.T) {
 	}
 	for _, scope := range []struct{ tenant, agent string }{{"other", "finance"}, {"acme", "other"}} {
 		q := inprocess.NewQueue()
-		job := &transport.RunAssignment{RunID: "synthetic-private", RunnerKind: "pool-finance", TenantID: scope.tenant, GraphID: scope.agent, Generation: 1, Input: json.RawMessage(`{"private":"synthetic"}`)}
+		job := &transport.RunAssignment{RunID: "synthetic-private", RunnerKind: "pool-finance", TenantID: scope.tenant, GraphID: scope.agent, Generation: 1, Input: json.RawMessage(`{"private":"synthetic"}`), RunIncarnationID: originalRunIdentity(t, q, "synthetic-private")}
 		if err := q.Enqueue(ctx, job); err != nil {
 			t.Fatal(err)
 		}
-		s := NewServer(q, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
+		s := newIdentityServer(q, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
 		attempts := 0
-		s.SetRunLifecycle(func(context.Context, string, int64) (bool, error) { attempts++; return true, nil }, nil)
-		response, err := s.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "pool-finance", TimeoutSeconds: 1})
+		setIdentityLifecycle(s, func(context.Context, string, string, int64) (bool, error) { attempts++; return true, nil }, nil)
+		response, err := s.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "pool-finance", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 		if status.Code(err) != codes.PermissionDenied || response != nil || attempts != 0 {
 			t.Fatalf("foreign data exposed: response=%v err=%v attempts=%d", response, err, attempts)
 		}
 	}
-	if _, err := NewServer(inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus(), nil).GetJob(context.Background(), &pb.GetJobRequest{RunnerKind: "pool-unknown"}); status.Code(err) != codes.PermissionDenied {
+	if _, err := newIdentityServer(inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus(), nil).GetJob(context.Background(), &pb.GetJobRequest{RunnerKind: "pool-unknown", AssignmentIdentityVersion: 1}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("unknown pool accepted in local mode: %v", err)
 	}
 	queue := inprocess.NewQueue()
-	private := &transport.RunAssignment{RunID: "other-pool-run", RunnerKind: "pool-other", GraphID: "finance", TenantID: "acme", Generation: 1, Input: json.RawMessage(`{"private":"other pool input"}`)}
+	private := &transport.RunAssignment{RunID: "other-pool-run", RunnerKind: "pool-other", GraphID: "finance", TenantID: "acme", Generation: 1, Input: json.RawMessage(`{"private":"other pool input"}`), RunIncarnationID: originalRunIdentity(t, queue, "other-pool-run")}
 	if err := queue.Enqueue(ctx, private); err != nil {
 		t.Fatal(err)
 	}
-	server := NewServer(queue, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
-	if result, err := server.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "pool-other", TimeoutSeconds: 1}); status.Code(err) != codes.PermissionDenied || result != nil {
+	server := newIdentityServer(queue, inprocess.NewBroker(), inprocess.NewCancelBus(), nil)
+	if result, err := server.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "pool-other", TimeoutSeconds: 1, AssignmentIdentityVersion: 1}); status.Code(err) != codes.PermissionDenied || result != nil {
 		t.Fatalf("another pool received input: %v %v", result, err)
 	}
 	retained, err := queue.Dequeue(context.Background(), "pool-other", time.Millisecond)

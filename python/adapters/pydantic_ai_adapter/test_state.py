@@ -515,7 +515,7 @@ class NativeStateTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_trusted_tenant_runner_and_attempt_binding_reach_the_checkpoint(self) -> None:
         tenant = bind_tenant("tenant-one")
-        run = bind_run("run-bound", 9)
+        run = bind_run("run-bound", 9, run_incarnation_id="record-fixture")
         runner = bind_runner("python-pydantic-ai", "synthetic-token")
         try:
             store = self.store(state_json(self.value).encode())

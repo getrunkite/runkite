@@ -17,7 +17,7 @@ type poisonAckQueue struct {
 	acks      []int64
 }
 
-func (q *poisonAckQueue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
+func (q *poisonAckQueue) Ack(ctx context.Context, runID string, incarnation string, generation int64) (bool, error) {
 	if !q.completed {
 		return false, errors.New("ack attempted before durable completion")
 	}
@@ -25,14 +25,14 @@ func (q *poisonAckQueue) Ack(ctx context.Context, runID string, generation int64
 	if q.failAck {
 		return false, errors.New("injected queue outage")
 	}
-	return q.Queue.Ack(ctx, runID, generation)
+	return q.Queue.Ack(ctx, runID, incarnation, generation)
 }
 
 func poisonQueueFixture(t *testing.T) *poisonAckQueue {
 	t.Helper()
 	q := &poisonAckQueue{Queue: inprocess.NewQueue()}
 	ctx := context.Background()
-	if err := q.Enqueue(ctx, &transport.RunAssignment{RunID: "poison", RunnerKind: "kind", Generation: 2}); err != nil {
+	if err := q.Enqueue(ctx, &transport.RunAssignment{RunID: "poison", RunnerKind: "kind", Generation: 2, RunIncarnationID: originalRunIdentity(t, q, "poison")}); err != nil {
 		t.Fatal(err)
 	}
 	if assignment, err := q.Dequeue(ctx, "kind", time.Second); err != nil || assignment == nil {
@@ -44,7 +44,7 @@ func poisonQueueFixture(t *testing.T) *poisonAckQueue {
 func TestFinishPoisonPillRetainsLeaseUntilCompletionAndAckSucceed(t *testing.T) {
 	ctx := context.Background()
 	q := poisonQueueFixture(t)
-	pill := transport.PoisonPill{RunID: "poison", Generation: 3}
+	pill := transport.PoisonPill{RunID: "poison", Generation: 3, RunIncarnationID: originalRunIdentity(t, q, "poison")}
 	storeDown := errors.New("injected store outage")
 	if finished, err := finishPoisonPill(ctx, q, pill, "exhausted", func(context.Context, transport.PoisonPill, string) (bool, error) {
 		return false, storeDown
@@ -76,7 +76,7 @@ func TestFinishPoisonPillRetainsLeaseUntilCompletionAndAckSucceed(t *testing.T) 
 
 func TestFinishPoisonPillDoesNotAckRejectedCompletion(t *testing.T) {
 	q := poisonQueueFixture(t)
-	finished, err := finishPoisonPill(context.Background(), q, transport.PoisonPill{RunID: "poison", Generation: 3}, "exhausted", func(context.Context, transport.PoisonPill, string) (bool, error) {
+	finished, err := finishPoisonPill(context.Background(), q, transport.PoisonPill{RunID: "poison", Generation: 3, RunIncarnationID: originalRunIdentity(t, q, "poison")}, "exhausted", func(context.Context, transport.PoisonPill, string) (bool, error) {
 		return false, nil
 	})
 	if finished || err != nil || len(q.acks) != 0 {

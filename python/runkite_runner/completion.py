@@ -6,6 +6,7 @@ import asyncio
 import logging
 
 from . import runner_pb2
+from .assignment_identity import require_run_incarnation
 
 logger = logging.getLogger("runkite.runner")
 
@@ -25,12 +26,14 @@ async def finish_run(
     attempts: int = 4,
     retry_delay: float = 0.25,
     rpc_timeout: float = 5.0,
+    run_incarnation_id: str = "",
 ) -> str | None:
     """Called while the heartbeat is active; never re-executes the agent.
 
     An uncertain stream leaves the assignment recoverable. It must not
     rewrite the agent outcome or report success before output is confirmed.
     """
+    run_incarnation_id = require_run_incarnation(run_incarnation_id)
     error_message = "see error event" if status == "error" else ""
     try:
         response = await asyncio.wait_for(stream_task, timeout=30.0)
@@ -44,6 +47,7 @@ async def finish_run(
         status=status,
         error_message=error_message,
         generation=generation,
+        run_incarnation_id=run_incarnation_id,
     )
     for attempt in range(attempts):
         try:

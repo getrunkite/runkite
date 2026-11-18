@@ -64,7 +64,7 @@ func TestKafkaJobQueue(t *testing.T) {
 		// NewQueueWithNamespace's own doc comment for why (no cheap
 		// "wipe everything" primitive in Kafka the way Redis/NATS have).
 		namespace := fmt.Sprintf("test-%d", time.Now().UnixNano())
-		q, err := kafkatransport.NewQueueWithNamespace(context.Background(), brokers, namespace)
+		q, err := kafkatransport.NewQueueWithNamespace(context.Background(), brokers, namespace, kafkatransport.AllowNonAtomicFencing(true))
 		if err != nil {
 			t.Fatalf("NewQueueWithNamespace: %v", err)
 		}
@@ -88,7 +88,7 @@ func TestLen_SumsAcrossAllPartitionsNotJustPartitionZero(t *testing.T) {
 	ctx := context.Background()
 	namespace := fmt.Sprintf("test-multipart-%d", time.Now().UnixNano())
 
-	q, err := kafkatransport.NewQueueWithNamespace(ctx, brokers, namespace, kafkatransport.WithJobPartitions(4))
+	q, err := kafkatransport.NewQueueWithNamespace(ctx, brokers, namespace, kafkatransport.WithJobPartitions(4), kafkatransport.AllowNonAtomicFencing(true))
 	if err != nil {
 		t.Fatalf("NewQueueWithNamespace: %v", err)
 	}

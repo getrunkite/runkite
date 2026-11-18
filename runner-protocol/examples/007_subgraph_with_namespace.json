@@ -1,49 +1,79 @@
 {
   "_description": "Agent with a subgraph. Events from the subgraph carry the correct namespace path. Tests namespace propagation on updates/values (root graph namespace is empty).",
   "_test_id": "RP-027",
-
   "assignment": {
     "run_id": "a1b2c3d4-0007-4000-8000-000000000008",
     "thread_id": "t1t2t3t4-0007-4000-8000-000000000008",
     "runner_kind": "python-langgraph",
     "graph_id": "parent_agent",
-    "input": { "messages": [{ "role": "user", "content": "research and summarize" }] },
-    "config": { "configurable": {} },
-    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read"] },
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "research and summarize"
+        }
+      ]
+    },
+    "config": {
+      "configurable": {}
+    },
+    "user": {
+      "identity": "test-user",
+      "is_authenticated": true,
+      "permissions": [
+        "read"
+      ]
+    },
     "checkpoint_ref": null,
     "resume_command": null,
-    "stream_modes": ["values", "updates"],
+    "stream_modes": [
+      "values",
+      "updates"
+    ],
     "connector_needs": [],
     "trace_context": {
       "traceparent": "00-abcdef1234567890abcdef1234567890-8234567890abcdef-01",
       "tracestate": "",
       "correlation_id": "req-0007"
-    }
+    },
+    "run_incarnation_id": "fixture-record:a1b2c3d4-0007-4000-8000-000000000008",
+    "generation": 1
   },
-
   "expected_events": [
     {
       "seq": 1,
       "method": "lifecycle",
       "namespace": [],
-      "data": { "event": "running" }
+      "data": {
+        "event": "running"
+      }
     },
     {
       "seq": 2,
       "method": "updates",
-      "namespace": ["researcher"],
+      "namespace": [
+        "researcher"
+      ],
       "data": {
         "search_node": {
-          "results": ["result 1", "result 2"]
+          "results": [
+            "result 1",
+            "result 2"
+          ]
         }
       }
     },
     {
       "seq": 3,
       "method": "values",
-      "namespace": ["researcher"],
+      "namespace": [
+        "researcher"
+      ],
       "data": {
-        "results": ["result 1", "result 2"]
+        "results": [
+          "result 1",
+          "result 2"
+        ]
       }
     },
     {
@@ -53,7 +83,10 @@
       "data": {
         "summarizer": {
           "messages": [
-            { "role": "ai", "content": "Based on the research: result 1 and result 2." }
+            {
+              "role": "ai",
+              "content": "Based on the research: result 1 and result 2."
+            }
           ]
         }
       }
@@ -64,8 +97,14 @@
       "namespace": [],
       "data": {
         "messages": [
-          { "role": "user", "content": "research and summarize" },
-          { "role": "ai", "content": "Based on the research: result 1 and result 2." }
+          {
+            "role": "user",
+            "content": "research and summarize"
+          },
+          {
+            "role": "ai",
+            "content": "Based on the research: result 1 and result 2."
+          }
         ]
       }
     },
@@ -73,7 +112,9 @@
       "seq": 6,
       "method": "end",
       "namespace": [],
-      "data": { "status": "success" }
+      "data": {
+        "status": "success"
+      }
     }
   ]
 }

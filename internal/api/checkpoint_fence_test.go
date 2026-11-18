@@ -73,7 +73,7 @@ func TestOpaqueCheckpointWriteFenceAfterAuthorization(t *testing.T) {
 			unblock := func() { releaseOnce.Do(func() { close(body.release) }) }
 			defer unblock()
 			stale := httptest.NewRequest(http.MethodPut, "/internal/checkpoints/checkpoint-thread/adapter-state", body)
-			stale.Header.Set(auth.HeaderRunID, "checkpoint-run")
+			stale.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, env.store, stale.Header, auth.HeaderRunID, "checkpoint-run"))
 			stale.Header.Set(auth.HeaderGeneration, "1")
 			if mode == "cas" {
 				stale.Header.Set("If-Match", `"1"`)
@@ -92,16 +92,16 @@ func TestOpaqueCheckpointWriteFenceAfterAuthorization(t *testing.T) {
 			wantData, wantReason := "current", auth.ReasonRunGenerationMismatch
 			if mode == "terminal" {
 				wantData, wantReason = "initial", auth.ReasonRunNotInflight
-				if _, err := env.store.CompleteRun(ctx, &state.RunCompletion{RunID: "checkpoint-run", Generation: 1, Status: "interrupted"}); err != nil {
+				if _, err := env.store.CompleteRun(ctx, withOriginalCompletion(t, env.store, &state.RunCompletion{RunID: "checkpoint-run", Generation: 1, Status: "interrupted"})); err != nil {
 					t.Fatal(err)
 				}
 			} else {
-				if ok, err := env.store.BeginRunAttempt(ctx, "checkpoint-run", 2); err != nil || !ok {
+				if ok, err := env.store.BeginRunAttempt(ctx, "checkpoint-run", originalRunIdentity(t, env.store, "checkpoint-run"), 2); err != nil || !ok {
 					t.Fatal(ok, err)
 				}
 				lookup.generation.Store(2)
 				current := httptest.NewRequest(http.MethodPut, stale.URL.String(), bytes.NewBufferString("current"))
-				current.Header.Set(auth.HeaderRunID, "checkpoint-run")
+				current.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, env.store, current.Header, auth.HeaderRunID, "checkpoint-run"))
 				current.Header.Set(auth.HeaderGeneration, "2")
 				currentResponse := httptest.NewRecorder()
 				handler.ServeHTTP(currentResponse, current)
@@ -161,7 +161,7 @@ func TestOpaqueCheckpointDeleteFenceAfterAuthorization(t *testing.T) {
 			})
 			handler := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, next)
 			request := httptest.NewRequest(http.MethodDelete, "/internal/checkpoints/checkpoint-thread/adapter-state", nil)
-			request.Header.Set(auth.HeaderRunID, "checkpoint-run")
+			request.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, env.store, request.Header, auth.HeaderRunID, "checkpoint-run"))
 			request.Header.Set(auth.HeaderGeneration, "1")
 			response := httptest.NewRecorder()
 			done := make(chan struct{})
@@ -174,10 +174,10 @@ func TestOpaqueCheckpointDeleteFenceAfterAuthorization(t *testing.T) {
 			wantReason := auth.ReasonRunGenerationMismatch
 			if terminal {
 				wantReason = auth.ReasonRunNotInflight
-				if result, err := env.store.CompleteRun(ctx, &state.RunCompletion{RunID: "checkpoint-run", Generation: 1, Status: "interrupted"}); err != nil || !result.Applied {
+				if result, err := env.store.CompleteRun(ctx, withOriginalCompletion(t, env.store, &state.RunCompletion{RunID: "checkpoint-run", Generation: 1, Status: "interrupted"})); err != nil || !result.Applied {
 					t.Fatal(result, err)
 				}
-			} else if ok, err := env.store.BeginRunAttempt(ctx, "checkpoint-run", 2); err != nil || !ok {
+			} else if ok, err := env.store.BeginRunAttempt(ctx, "checkpoint-run", originalRunIdentity(t, env.store, "checkpoint-run"), 2); err != nil || !ok {
 				t.Fatal(ok, err)
 			}
 			unblock()

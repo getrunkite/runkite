@@ -412,6 +412,9 @@ func (s *Store) migrations(db migrate.DB) []migrate.Migration {
 		{Version: 23, Name: "durable_run_usage", Up: func(ctx context.Context) error { return s.upRunUsage(ctx, db) }, Down: func(context.Context) error {
 			return fmt.Errorf("durable usage cannot be downgraded safely; restore a reviewed backup and reconcile recorded usage")
 		}},
+		{Version: 24, Name: "run_finalization_identity", Up: func(ctx context.Context) error { return s.upRunFinalization(ctx, db) }, Down: func(context.Context) error {
+			return fmt.Errorf("record-bound accounting cannot be downgraded safely; restore a reviewed backup and reconcile usage")
+		}},
 	}
 }
 
@@ -783,7 +786,7 @@ func (s *Store) TruncateAll(ctx context.Context) error {
 		"agent_schemas", "agents", "agent_versions",
 		"registry_entries", "registry_entry_versions",
 		"webhook_dead_letters", "audit_events", "policy_grants", "action_deliveries", "pending_action_approvals", "pending_actions",
-		"kill_switches", "break_glass_windows", "mandatory_hitl_rules", "usage_events",
+		"kill_switches", "break_glass_windows", "mandatory_hitl_rules", "usage_events", "usage_holds",
 		"run_cache", "cron_schedules", "cron_claims", "terminal_hook_claims",
 	}
 	for _, tbl := range tables {

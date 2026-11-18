@@ -182,13 +182,13 @@ func qualifyNativePromptfooManagedRuns(t *testing.T, scoped bool) {
 			mu.Lock()
 			ids[assignment.RunID] = true
 			mu.Unlock()
-			accepted, err := plane.BeginRunAttempt(ctx, assignment.RunID, assignment.Generation)
+			accepted, err := plane.BeginRunAttempt(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), assignment.Generation)
 			if err != nil || !accepted {
 				workerError <- fmt.Errorf("attempt: %v", err)
 				return
 			}
 			values := map[string]interface{}{"messages": []map[string]interface{}{{"role": "assistant", "content": "scripted:" + input.Messages[0].Content}}}
-			accepted, err = plane.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, RunID: assignment.RunID, Generation: assignment.Generation, Status: models.RunStatusSuccess, Values: values})
+			accepted, err = plane.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{TrustedSystem: true, RunID: assignment.RunID, Generation: assignment.Generation, Status: models.RunStatusSuccess, Values: values}))
 			if err != nil || !accepted {
 				workerError <- fmt.Errorf("completion: %v", err)
 				return

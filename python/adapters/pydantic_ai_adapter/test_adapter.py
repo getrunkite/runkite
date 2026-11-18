@@ -27,6 +27,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "adapters"))
 os.environ["PYDANTIC_AI_NO_BANNER"] = "1"
 
+from runkite_runner.assignment_identity import native_turn_id  # noqa: E402
 from runkite_runner.completion import CompletionDeliveryError  # noqa: E402
 from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant  # noqa: E402
 
@@ -130,6 +131,7 @@ class PydanticAIAdapterTests(unittest.IsolatedAsyncioTestCase):
         cancel=None,
         extra=None,
         send_hook=None,
+        incarnation="record-fixture",
         tenant="default",
         thread="thread-1",
     ):
@@ -140,7 +142,7 @@ class PydanticAIAdapterTests(unittest.IsolatedAsyncioTestCase):
             if send_hook:
                 await send_hook(event)
 
-        bound_tenant, bound_run = bind_tenant(tenant), bind_run(run_id, generation)
+        bound_tenant, bound_run = bind_tenant(tenant), bind_run(run_id, generation, run_incarnation_id=incarnation)
         try:
             status = await self.adapter.execute(
                 {
@@ -151,6 +153,7 @@ class PydanticAIAdapterTests(unittest.IsolatedAsyncioTestCase):
                     "generation": generation,
                     "input": {"messages": [{"role": "user", "content": "question"}]},
                     **(extra or {}),
+                    "run_incarnation_id": incarnation,
                 },
                 send,
                 cancel if cancel is not None else asyncio.Event(),
@@ -165,6 +168,54 @@ class PydanticAIAdapterTests(unittest.IsolatedAsyncioTestCase):
 
     def saved(self):
         return json.loads(next(iter(self.plane.blobs.values())))
+
+    def _make_receipt_legacy(self):
+        for key, raw in list(self.plane.blobs.items()):
+            value = json.loads(raw)
+            receipt = value["completed"]
+            original = receipt.pop("run_incarnation_id")
+            encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+            # Legacy native SDK histories used the public run ID directly.
+            self.plane.blobs[key] = encoded.replace(
+                native_turn_id(receipt["run_id"], original).encode(), receipt["run_id"].encode()
+            )
+
+    async def test_same_public_id_new_record_executes_fresh_turn(self):
+        self.assertEqual((await self.execute(incarnation="record-a"))[0], "success")
+        self.model = NativeModel([text])
+        status, events = await self.execute(incarnation="record-b")
+        self.assertEqual(status, "success", events)
+        self.assertEqual(self.plane.puts, 2)
+        output = [event["data"] for event in events if event["method"] == "values"][-1]
+        self.assertEqual(len(output["messages"]), 4)
+        saved = json.loads(next(iter(self.plane.blobs.values())))
+        self.assertEqual(saved["completed"]["run_incarnation_id"], "record-b")
+
+    async def test_legacy_same_public_id_is_ambiguous_before_factory_or_text(self):
+        self.assertEqual((await self.execute(incarnation="record-a"))[0], "success")
+        self._make_receipt_legacy()
+        calls = []
+
+        def blocked_factory(context):
+            calls.append(context)
+            raise AssertionError("ambiguous receipt must not build an agent")
+
+        self.adapter.factories["agent"] = blocked_factory
+        status, events = await self.execute(incarnation="record-b")
+        self.assertEqual(status, "error", events)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.plane.puts, 1)
+        self.assertFalse(any(event["method"] in {"messages", "values"} for event in events))
+
+    async def test_legacy_different_public_id_restores_conversation(self):
+        self.assertEqual((await self.execute(incarnation="record-a"))[0], "success")
+        self._make_receipt_legacy()
+        self.model = NativeModel([text])
+        status, events = await self.execute("run-2", incarnation="record-b")
+        self.assertEqual(status, "success", events)
+        self.assertEqual(self.plane.puts, 2)
+        output = [event["data"] for event in events if event["method"] == "values"][-1]
+        self.assertEqual(len(output["messages"]), 4)
 
     async def test_native_text_drains_to_durable_success_with_current_usage(self):
         async def send(event):

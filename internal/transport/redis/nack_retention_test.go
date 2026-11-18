@@ -27,16 +27,16 @@ func TestNackRetainsLeaseWhenReturningToReadyQueueFails(t *testing.T) {
 	if err := rdb.Set(ctx, "rk:queue:kind", "wrong-type", 0).Err(); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.Nack(ctx, job.RunID, 1); err == nil {
+	if err := q.Nack(ctx, job.RunID, "", 1); err == nil {
 		t.Fatal("expected the ready-queue write to fail")
 	}
-	if current, err := q.Renew(ctx, job.RunID, 1); err != nil || !current {
+	if current, err := q.Renew(ctx, job.RunID, "", 1); err != nil || !current {
 		t.Fatalf("failed nack lost recoverable assignment: current=%t err=%v", current, err)
 	}
 	if err := rdb.Del(ctx, "rk:queue:kind").Err(); err != nil {
 		t.Fatal(err)
 	}
-	if err := q.Nack(ctx, job.RunID, 1); err != nil {
+	if err := q.Nack(ctx, job.RunID, "", 1); err != nil {
 		t.Fatal(err)
 	}
 	got, err := q.Dequeue(ctx, "kind", time.Second)

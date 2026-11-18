@@ -40,6 +40,7 @@ import logging
 import grpc
 
 from . import runner_pb2, runner_pb2_grpc
+from .assignment_identity import require_run_incarnation
 
 logger = logging.getLogger("runkite.runner")
 
@@ -60,6 +61,7 @@ async def heartbeat_loop(
     cancel_event: asyncio.Event | None = None,
     interval_s: float = DEFAULT_HEARTBEAT_INTERVAL_S,
     rpc_timeout_s: float = DEFAULT_HEARTBEAT_RPC_TIMEOUT_S,
+    run_incarnation_id: str = "",
 ) -> None:
     """Calls Heartbeat(run_id, generation) every interval_s until
     cancelled.
@@ -82,12 +84,16 @@ async def heartbeat_loop(
     is pointless, and every subsequent call would just be rejected the
     same way.
     """
+    run_incarnation_id = require_run_incarnation(run_incarnation_id)
     while True:
         await asyncio.sleep(interval_s)
         try:
             resp = await asyncio.wait_for(
                 stub.Heartbeat(
-                    runner_pb2.HeartbeatRequest(run_id=run_id, generation=generation), metadata=auth_metadata
+                    runner_pb2.HeartbeatRequest(
+                        run_id=run_id, generation=generation, run_incarnation_id=run_incarnation_id
+                    ),
+                    metadata=auth_metadata,
                 ),
                 timeout=rpc_timeout_s,
             )

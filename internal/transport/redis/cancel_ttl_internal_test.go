@@ -36,10 +36,10 @@ func TestCancelMarkerExpires(t *testing.T) {
 	nowMillis = func() int64 { return base }
 
 	runID := "run-cancel-ttl"
-	if err := q.Cancel(ctx, runID); err != nil {
+	if err := q.Cancel(ctx, runID, ""); err != nil {
 		t.Fatal(err)
 	}
-	ok, err := q.isCanceled(ctx, runID)
+	ok, err := q.isCanceled(ctx, runID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +49,7 @@ func TestCancelMarkerExpires(t *testing.T) {
 
 	// Past TTL: marker must not suppress enqueue.
 	nowMillis = func() int64 { return base + canceledMemberTTL.Milliseconds() + 1 }
-	ok, err = q.isCanceled(ctx, runID)
+	ok, err = q.isCanceled(ctx, runID, "")
 	if err != nil {
 		t.Fatal(err)
 	}

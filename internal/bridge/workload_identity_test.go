@@ -128,7 +128,7 @@ func TestWorkloadIdentityMTLSSameFleetPeerCannotHijack(t *testing.T) {
 	rt := workloadTestTokens(t)
 	queue, broker, cancels := inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus()
 	var completions atomic.Int32
-	bridge := NewServer(queue, broker, cancels, func(_, _, _ string) { completions.Add(1) })
+	bridge := newIdentityServer(queue, broker, cancels, func(_, _, _ string) { completions.Add(1) })
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -140,13 +140,13 @@ func TestWorkloadIdentityMTLSSameFleetPeerCannotHijack(t *testing.T) {
 	a := workloadClient(t, listener.Addr().String(), pki, workerA)
 	b := workloadClient(t, listener.Addr().String(), pki, workerB)
 	bad := workloadClient(t, listener.Addr().String(), pki, unauthorized)
-	if _, err := bad.GetJob(workloadCallContext(t), &pb.GetJobRequest{RunnerKind: "workload-test", TimeoutSeconds: 1}); status.Code(err) != codes.Unauthenticated {
+	if _, err := bad.GetJob(workloadCallContext(t), &pb.GetJobRequest{RunnerKind: "workload-test", TimeoutSeconds: 1, AssignmentIdentityVersion: 1}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("unmapped verified SAN: %v", err)
 	}
-	if err := queue.Enqueue(context.Background(), &transport.RunAssignment{RunID: "owned-run", RunnerKind: "workload-test", ThreadID: "thread", GraphID: "agent", TenantID: "acme", Generation: 1}); err != nil {
+	if err := queue.Enqueue(context.Background(), &transport.RunAssignment{RunID: "owned-run", RunnerKind: "workload-test", ThreadID: "thread", GraphID: "agent", TenantID: "acme", Generation: 1, RunIncarnationID: originalRunIdentity(t, queue, "owned-run")}); err != nil {
 		t.Fatal(err)
 	}
-	job, err := a.GetJob(workloadCallContext(t), &pb.GetJobRequest{RunnerKind: "workload-test", TimeoutSeconds: 1})
+	job, err := a.GetJob(workloadCallContext(t), &pb.GetJobRequest{RunnerKind: "workload-test", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if err != nil || !job.HasJob {
 		t.Fatalf("dispatch: %v, %v", job, err)
 	}
@@ -157,22 +157,22 @@ func TestWorkloadIdentityMTLSSameFleetPeerCannotHijack(t *testing.T) {
 	if assignment.WorkloadOwner == nil || assignment.WorkloadOwner.URI != "spiffe://test.runkite/runner/fleet" || len(assignment.WorkloadOwner.KeySHA256) != 64 {
 		t.Fatalf("missing verified owner: %#v", assignment.WorkloadOwner)
 	}
-	if _, err := b.Heartbeat(workloadCallContext(t), &pb.HeartbeatRequest{RunId: assignment.RunID, Generation: 1}); status.Code(err) != codes.PermissionDenied {
+	if _, err := b.Heartbeat(workloadCallContext(t), &pb.HeartbeatRequest{RunId: assignment.RunID, Generation: 1, RunIncarnationId: originalRunIdentity(t, assignment, assignment.RunID)}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("peer renewed owner lease: %v", err)
 	}
 	stream, err := b.StreamEvents(workloadCallContext(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_ = stream.Send(&pb.RunEventProto{RunId: assignment.RunID, Generation: 1, EventJson: `{"event_id":"peer","method":"values","data":{"secret":"must not publish"}}`})
+	_ = stream.Send(&pb.RunEventProto{RunId: assignment.RunID, Generation: 1, EventJson: `{"event_id":"peer","method":"values","data":{"secret":"must not publish"}}`, RunIncarnationId: originalRunIdentity(t, assignment, assignment.RunID)})
 	if _, err := stream.CloseAndRecv(); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("peer published: %v", err)
 	}
-	events, err := broker.Replay(context.Background(), assignment.RunID, 0)
+	events, err := broker.Replay(context.Background(), assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), 0)
 	if err != nil || len(events) != 0 {
 		t.Fatalf("peer event was stored: %v, %v", events, err)
 	}
-	if _, err := b.ReportStatus(workloadCallContext(t), &pb.ReportStatusRequest{RunId: assignment.RunID, Generation: 1, Status: "success"}); status.Code(err) != codes.PermissionDenied {
+	if _, err := b.ReportStatus(workloadCallContext(t), &pb.ReportStatusRequest{RunId: assignment.RunID, Generation: 1, Status: "success", RunIncarnationId: originalRunIdentity(t, assignment, assignment.RunID)}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("peer completed: %v", err)
 	}
 	if completions.Load() != 0 {
@@ -191,7 +191,7 @@ func TestWorkloadIdentityMTLSSameFleetPeerCannotHijack(t *testing.T) {
 	httpServer.TLS = &tls.Config{Certificates: []tls.Certificate{serverCert}, ClientCAs: pki.pool, ClientAuth: tls.RequireAndVerifyClientCert, MinVersion: tls.VersionTLS12}
 	httpServer.StartTLS()
 	t.Cleanup(httpServer.Close)
-	request := func(cert tls.Certificate, path string) int {
+	request := func(cert tls.Certificate, path string, presentedRun ...string) int {
 		client := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pki.pool, Certificates: []tls.Certificate{cert}, MinVersion: tls.VersionTLS12}}, Timeout: 2 * time.Second}
 		defer client.CloseIdleConnections()
 		req, err := http.NewRequest("GET", httpServer.URL+path, nil)
@@ -200,7 +200,12 @@ func TestWorkloadIdentityMTLSSameFleetPeerCannotHijack(t *testing.T) {
 		}
 		req.Header.Set(auth.HeaderRunnerKind, "workload-test")
 		req.Header.Set(auth.HeaderRunnerToken, "synthetic-workload-token")
-		req.Header.Set(auth.HeaderRunID, assignment.RunID)
+		runID := assignment.RunID
+		if len(presentedRun) != 0 {
+			runID = presentedRun[0]
+		}
+		req.Header.Set(auth.HeaderRunID, runID)
+		req.Header.Set(auth.HeaderRunIncarnation, assignment.RunIncarnationID)
 		req.Header.Set(auth.HeaderGeneration, strconv.FormatInt(assignment.Generation, 10))
 		req.Header.Set("X-Workload-Identity", assignment.WorkloadOwner.URI)
 		resp, err := client.Do(req)
@@ -213,8 +218,10 @@ func TestWorkloadIdentityMTLSSameFleetPeerCannotHijack(t *testing.T) {
 	if got := request(workerB, "/internal/store/items"); got != http.StatusForbidden {
 		t.Fatalf("peer HTTP status=%d", got)
 	}
-	if got := request(workerA, "/internal/runs/foreign/status"); got != http.StatusForbidden {
-		t.Fatalf("foreign run path status=%d", got)
+	// This handler intentionally tests middleware rather than the API router.
+	// URL-specific run checks live in the corresponding real API handlers.
+	if got := request(workerA, "/internal/store/items", "foreign"); got != http.StatusForbidden {
+		t.Fatalf("foreign run binding status=%d", got)
 	}
 	if got := request(workerA, "/internal/store/items"); got != http.StatusNoContent {
 		t.Fatalf("owner HTTP status=%d", got)
@@ -226,14 +233,14 @@ func TestWorkloadIdentityMTLSSameFleetPeerCannotHijack(t *testing.T) {
 	if n, _, err := queue.ReclaimStale(context.Background(), -time.Second, 0); err != nil || n != 1 {
 		t.Fatalf("reclaim: %d %v", n, err)
 	}
-	replacement, err := b.GetJob(workloadCallContext(t), &pb.GetJobRequest{RunnerKind: "workload-test", TimeoutSeconds: 1})
+	replacement, err := b.GetJob(workloadCallContext(t), &pb.GetJobRequest{RunnerKind: "workload-test", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 	if err != nil || !replacement.HasJob {
 		t.Fatalf("replacement: %v %v", replacement, err)
 	}
-	if _, err := a.Heartbeat(workloadCallContext(t), &pb.HeartbeatRequest{RunId: assignment.RunID, Generation: 2}); status.Code(err) != codes.PermissionDenied {
+	if _, err := a.Heartbeat(workloadCallContext(t), &pb.HeartbeatRequest{RunId: assignment.RunID, Generation: 2, RunIncarnationId: originalRunIdentity(t, assignment, assignment.RunID)}); status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("old key borrowed replacement generation: %v", err)
 	}
-	if resp, err := b.Heartbeat(workloadCallContext(t), &pb.HeartbeatRequest{RunId: assignment.RunID, Generation: 2}); err != nil || resp.Superseded {
+	if resp, err := b.Heartbeat(workloadCallContext(t), &pb.HeartbeatRequest{RunId: assignment.RunID, Generation: 2, RunIncarnationId: originalRunIdentity(t, assignment, assignment.RunID)}); err != nil || resp.Superseded {
 		t.Fatalf("new owner: %v %v", resp, err)
 	}
 }
@@ -268,36 +275,36 @@ func TestWorkloadIdentityRejectsUnverifiedExpiredAndLongLivedCertificates(t *tes
 	if err := auth.RequireWorkloadOwner(ctx, owner); err == nil {
 		t.Fatal("expired existing connection remained authorized")
 	}
-	if _, err := NewServer(inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus(), nil).Heartbeat(ctx, &pb.HeartbeatRequest{RunId: "run"}); status.Code(err) != codes.Unauthenticated {
+	if _, err := newIdentityServer(inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus(), nil).Heartbeat(ctx, &pb.HeartbeatRequest{RunId: "run", RunIncarnationId: fixtureRecordIdentity()}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("expired RPC: %v", err)
 	}
 }
 
 func TestWorkloadCancelWatchersAreHolderScoped(t *testing.T) {
 	queue, cancels := inprocess.NewQueue(), inprocess.NewCancelBus()
-	bridge := NewServer(queue, inprocess.NewBroker(), cancels, nil)
+	bridge := newIdentityServer(queue, inprocess.NewBroker(), cancels, nil)
 	ownerA := &transport.WorkloadIdentity{URI: "spiffe://test.runkite/runner/fleet", KeySHA256: strings.Repeat("a", 64), NotAfter: time.Now().Add(time.Hour)}
 	ownerB := *ownerA
 	ownerB.KeySHA256 = strings.Repeat("b", 64)
 	ctxA, ctxB := transport.WithWorkloadIdentity(context.Background(), ownerA), transport.WithWorkloadIdentity(context.Background(), &ownerB)
-	a, b := make(chan string, 1), make(chan string, 1)
+	a, b := make(chan *pb.CancelSignal, 1), make(chan *pb.CancelSignal, 1)
 	bridge.addWatcher(workloadWatcherKey(ctxA, "kind"), a)
 	bridge.addWatcher(workloadWatcherKey(ctxB, "kind"), b)
 	defer bridge.removeWatcher(workloadWatcherKey(ctxA, "kind"), a)
 	defer bridge.removeWatcher(workloadWatcherKey(ctxB, "kind"), b)
-	if err := queue.Enqueue(context.Background(), &transport.RunAssignment{RunID: "cancel-owned", RunnerKind: "kind", Generation: 1}); err != nil {
+	if err := queue.Enqueue(context.Background(), &transport.RunAssignment{RunID: "cancel-owned", RunnerKind: "kind", Generation: 1, RunIncarnationID: originalRunIdentity(t, queue, "cancel-owned")}); err != nil {
 		t.Fatal(err)
 	}
-	if job, err := bridge.GetJob(ctxA, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1}); err != nil || !job.HasJob {
+	if job, err := bridge.GetJob(ctxA, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1}); err != nil || !job.HasJob {
 		t.Fatalf("dispatch: %v %v", job, err)
 	}
-	defer bridge.cleanupRun("cancel-owned")
-	if err := cancels.PublishCancel(context.Background(), "cancel-owned"); err != nil {
+	defer bridge.cleanupRun("cancel-owned", "fixture-record")
+	if err := cancels.PublishCancel(context.Background(), "cancel-owned", originalRunIdentity(t, cancels, "cancel-owned")); err != nil {
 		t.Fatal(err)
 	}
 	select {
 	case id := <-a:
-		if id != "cancel-owned" {
+		if id.RunId != "cancel-owned" {
 			t.Fatal(id)
 		}
 	case <-time.After(time.Second):

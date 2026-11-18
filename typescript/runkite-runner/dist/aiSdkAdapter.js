@@ -39,6 +39,9 @@ function storedState(value, graphId) {
         !Array.isArray(state.messages) ||
         state.completed?.status !== "success" ||
         typeof state.completed.run_id !== "string" ||
+        (state.completed.run_incarnation_id !== undefined &&
+            (typeof state.completed.run_incarnation_id !== "string" ||
+                !/^[\x21-\x7e]{1,256}$/.test(state.completed.run_incarnation_id))) ||
         typeof state.completed.input !== "string" ||
         !Array.isArray(state.completed.chunks) ||
         !state.completed.output ||
@@ -103,12 +106,16 @@ export class AiSdkAdapter {
         return runWithBinding({
             tenantId: assignment.tenant_id,
             runId: assignment.run_id,
+            runIncarnationId: assignment.run_incarnation_id,
             generation: assignment.generation,
             runnerKind: this.options.runnerKind ?? "typescript-ai-sdk",
             runnerToken: this.options.runnerToken,
         }, () => this.executeBound(assignment, emit, isCancelled));
     }
     async executeBound(assignment, emit, isCancelled) {
+        const runIncarnationId = assignment.run_incarnation_id;
+        if (typeof runIncarnationId !== "string" || !/^[\x21-\x7e]{1,256}$/.test(runIncarnationId))
+            throw new CompletionDeliveryError("assignment has no valid original record identity");
         let seq = 0;
         const event = (method, data) => emit({ event_id: `${assignment.run_id}_evt_${++seq}`, seq, method, data, namespace: [], ts: Date.now() });
         const generation = assignment.generation ?? 0;
@@ -143,7 +150,9 @@ export class AiSdkAdapter {
                 return "interrupted";
             }
             await event("lifecycle", { event: "running" });
-            if (prior?.completed.run_id === assignment.run_id) {
+            if (prior?.completed.run_id === assignment.run_id && !prior.completed.run_incarnation_id)
+                throw new CompletionDeliveryError("legacy turn receipt cannot prove the original run record");
+            if (prior?.completed.run_id === assignment.run_id && prior.completed.run_incarnation_id === runIncarnationId) {
                 if (prior.completed.input !== inputKey)
                     throw new Error("reclaimed run input differs from its committed turn");
                 for (const chunk of prior.completed.chunks) {
@@ -317,7 +326,14 @@ export class AiSdkAdapter {
                 framework: "ai-sdk",
                 graph_id: assignment.graph_id,
                 messages: history,
-                completed: { run_id: assignment.run_id, input: inputKey, status: "success", output: { usage }, chunks },
+                completed: {
+                    run_id: assignment.run_id,
+                    run_incarnation_id: runIncarnationId,
+                    input: inputKey,
+                    status: "success",
+                    output: { usage },
+                    chunks,
+                },
             }, snapshot.etag);
             await event("values", output);
             for (const chunk of chunks)

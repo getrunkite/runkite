@@ -135,6 +135,12 @@ func (s *haSuite) internalHeaders(f tenantFixture, token string) http.Header {
 	h.Set(auth.HeaderRunnerKind, s.runnerKind)
 	h.Set(auth.HeaderRunnerToken, s.runnerToken)
 	h.Set(auth.HeaderRunID, f.run)
+	for _, assignment := range s.assignments {
+		if assignment.RunID == f.run {
+			h.Set(auth.HeaderRunIncarnation, assignment.RunIncarnationID)
+			break
+		}
+	}
 	h.Set(auth.HeaderGeneration, strconv.FormatInt(f.generation, 10))
 	if token != "" {
 		h.Set(connector.HeaderConnectorSession, token)

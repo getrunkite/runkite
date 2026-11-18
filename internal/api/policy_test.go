@@ -37,7 +37,7 @@ func TestHandleProxyMCP_PolicyDeny(t *testing.T) {
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ch, err := broker.Subscribe(subCtx, "run-1")
+	ch, err := broker.Subscribe(subCtx, "run-1", originalRunIdentity(t, broker, "run-1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestHandleProxyMCP_PolicyDeny(t *testing.T) {
 	req.SetPathValue("name", "sf")
 	binding := &auth.RunBinding{
 		RunID: "run-1", Generation: 1, TenantID: "acme", AgentID: "sales",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, s, "run-1"),
 	}
 	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
 	attachConnectorSession(t, s, binding, "sf", req)
@@ -110,7 +110,7 @@ func TestHandleGetSession_PolicyDeny(t *testing.T) {
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ch, err := broker.Subscribe(subCtx, "r")
+	ch, err := broker.Subscribe(subCtx, "r", originalRunIdentity(t, broker, "r"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func TestHandleGetSession_PolicyDeny(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/sf/session", nil)
 	req.SetPathValue("name", "sf")
 	req = req.WithContext(auth.WithRunBinding(context.Background(), &auth.RunBinding{
-		RunID: "r", Generation: 1, TenantID: "acme", AgentID: "sales",
+		RunID: "r", Generation: 1, TenantID: "acme", AgentID: "sales", RunIncarnationID: originalRunIdentity(t, s, "r"),
 	}))
 	rec := httptest.NewRecorder()
 	s.handleGetConnectorSession(rec, req)
@@ -166,7 +166,7 @@ func TestHandleProxyMCP_PolicyDeny_RunEventsOff(t *testing.T) {
 
 	subCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	ch, err := broker.Subscribe(subCtx, "run-off")
+	ch, err := broker.Subscribe(subCtx, "run-off", originalRunIdentity(t, broker, "run-off"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestHandleProxyMCP_PolicyDeny_RunEventsOff(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/sf/mcp", strings.NewReader(body))
 	req.SetPathValue("name", "sf")
 	binding := &auth.RunBinding{
-		RunID: "run-off", Generation: 1, TenantID: "acme", AgentID: "sales",
+		RunID: "run-off", Generation: 1, TenantID: "acme", AgentID: "sales", RunIncarnationID: originalRunIdentity(t, s, "run-off"),
 	}
 	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
 	attachConnectorSession(t, s, binding, "sf", req)

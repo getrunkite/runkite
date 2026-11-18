@@ -57,6 +57,7 @@ func makeEvent(runID string, seq int64, method string, data interface{}) *transp
 
 // RunJobQueueSuite runs all conformance tests for a JobQueue implementation.
 func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
+	runRecordQueueTests(t, factory)
 	t.Run("single_enqueue_dequeue", func(t *testing.T) {
 		q := factory()
 		ctx := context.Background()
@@ -205,7 +206,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("Enqueue failed: %v", err)
 		}
 
-		if err := q.Cancel(ctx, "run-cancel-before"); err != nil {
+		if err := q.Cancel(ctx, "run-cancel-before", ""); err != nil {
 			t.Fatalf("Cancel failed: %v", err)
 		}
 
@@ -225,7 +226,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 
 		_ = q.Enqueue(ctx, makeAssignment("run-skip-a", "test-runner", "echo"))
 		_ = q.Enqueue(ctx, makeAssignment("run-skip-b", "test-runner", "echo"))
-		if err := q.Cancel(ctx, "run-skip-a"); err != nil {
+		if err := q.Cancel(ctx, "run-skip-a", ""); err != nil {
 			t.Fatalf("Cancel failed: %v", err)
 		}
 
@@ -312,14 +313,14 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("Dequeue failed: %v", err)
 		}
 
-		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || !current {
+		if current, err := q.Renew(ctx, got.RunID, "", got.Generation); err != nil || !current {
 			t.Fatalf("Renew failed: current=%v err=%v", current, err)
 		}
 
 		// Renew must NOT have removed the job from in-flight tracking
 		// like Ack would -- proven here via Nack, which only re-enqueues
 		// a job that's still tracked as in-flight.
-		if err := q.Nack(ctx, got.RunID, got.Generation); err != nil {
+		if err := q.Nack(ctx, got.RunID, "", got.Generation); err != nil {
 			t.Fatalf("Nack failed: %v", err)
 		}
 		again, err := q.Dequeue(ctx, "test-runner", time.Second)
@@ -338,14 +339,14 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if err != nil || got == nil {
 			t.Fatalf("Dequeue failed: %v", err)
 		}
-		if accepted, err := q.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
+		if accepted, err := q.Ack(ctx, got.RunID, "", got.Generation); err != nil || !accepted {
 			t.Fatalf("Ack failed: accepted=%v err=%v", accepted, err)
 		}
 
 		// A heartbeat racing (or arriving after) completion must not
 		// resurrect the job -- e.g. by creating a phantom in-flight
 		// entry a later ReclaimStale would incorrectly re-queue.
-		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || current {
+		if current, err := q.Renew(ctx, got.RunID, "", got.Generation); err != nil || current {
 			t.Fatalf("Renew after Ack should be a safe no-op reporting current=false, got current=%v err=%v", current, err)
 		}
 
@@ -400,7 +401,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		// and calls Ack presenting its OWN (now stale) generation 1.
 		// Must be rejected, and must NOT touch the replacement's own
 		// generation-2 in-flight entry.
-		if accepted, err := q.Ack(ctx, "run-fence-1", 1); err != nil || accepted {
+		if accepted, err := q.Ack(ctx, "run-fence-1", "", 1); err != nil || accepted {
 			t.Fatalf("stale generation-1 Ack: expected accepted=false, got accepted=%v err=%v", accepted, err)
 		}
 
@@ -408,13 +409,13 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		// in-flight and un-touched by the rejected stale Ack --
 		// confirmed via Renew, which only succeeds while the job is
 		// still tracked.
-		if current, err := q.Renew(ctx, "run-fence-1", 2); err != nil || !current {
+		if current, err := q.Renew(ctx, "run-fence-1", "", 2); err != nil || !current {
 			t.Fatalf("expected generation 2 to still be current after the stale generation-1 Ack was rejected, got current=%v err=%v", current, err)
 		}
 
 		// Now the CURRENT (replacement) runner reports its own real
 		// completion at generation 2 -- must be accepted.
-		if accepted, err := q.Ack(ctx, "run-fence-1", 2); err != nil || !accepted {
+		if accepted, err := q.Ack(ctx, "run-fence-1", "", 2); err != nil || !accepted {
 			t.Fatalf("current generation-2 Ack: expected accepted=true, got accepted=%v err=%v", accepted, err)
 		}
 	})
@@ -444,14 +445,14 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("replacement dequeue: job=%v err=%v", replacement, err)
 		}
 		for _, stale := range []int64{0, originalGeneration, replacement.Generation + 1} {
-			if err := q.Nack(ctx, job.RunID, stale); err != nil {
+			if err := q.Nack(ctx, job.RunID, "", stale); err != nil {
 				t.Fatalf("stale nack: %v", err)
 			}
-			if current, err := q.Renew(ctx, job.RunID, replacement.Generation); err != nil || !current {
+			if current, err := q.Renew(ctx, job.RunID, "", replacement.Generation); err != nil || !current {
 				t.Fatalf("stale generation %d removed live generation %d: current=%t err=%v", stale, replacement.Generation, current, err)
 			}
 		}
-		if err := q.Nack(ctx, job.RunID, replacement.Generation); err != nil {
+		if err := q.Nack(ctx, job.RunID, "", replacement.Generation); err != nil {
 			t.Fatal(err)
 		}
 		returned, err := q.Dequeue(ctx, "test-runner", 5*time.Second)
@@ -484,12 +485,12 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		// The stale (generation 1) runner's heartbeat must be rejected
 		// -- current=false is its actionable "you've been superseded,
 		// stop executing" signal (see JobQueue.Renew's own doc comment).
-		if current, err := q.Renew(ctx, "run-fence-2", 1); err != nil || current {
+		if current, err := q.Renew(ctx, "run-fence-2", "", 1); err != nil || current {
 			t.Fatalf("stale generation-1 Renew: expected current=false, got current=%v err=%v", current, err)
 		}
 
 		// The genuinely-current generation 2 must be unaffected.
-		if current, err := q.Renew(ctx, "run-fence-2", 2); err != nil || !current {
+		if current, err := q.Renew(ctx, "run-fence-2", "", 2); err != nil || !current {
 			t.Fatalf("current generation-2 Renew: expected current=true, got current=%v err=%v", current, err)
 		}
 	})
@@ -505,16 +506,16 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 			t.Fatalf("Dequeue: job=%v err=%v", got, err)
 		}
 
-		if current, err := q.Renew(ctx, got.RunID, 0); err != nil || current {
+		if current, err := q.Renew(ctx, got.RunID, "", 0); err != nil || current {
 			t.Fatalf("generation-0 Renew must be superseded, got current=%v err=%v", current, err)
 		}
-		if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || accepted {
+		if accepted, err := q.Ack(ctx, got.RunID, "", 0); err != nil || accepted {
 			t.Fatalf("generation-0 Ack must be superseded, got accepted=%v err=%v", accepted, err)
 		}
-		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || !current {
+		if current, err := q.Renew(ctx, got.RunID, "", got.Generation); err != nil || !current {
 			t.Fatalf("current Renew after rejected zero: current=%v err=%v", current, err)
 		}
-		if accepted, err := q.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
+		if accepted, err := q.Ack(ctx, got.RunID, "", got.Generation); err != nil || !accepted {
 			t.Fatalf("current Ack after rejected zero: accepted=%v err=%v", accepted, err)
 		}
 	})
@@ -532,16 +533,16 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 		// Some transports assign a positive delivery generation at dequeue.
 		wrong := got.Generation + 1
-		if current, err := q.Renew(ctx, got.RunID, wrong); err != nil || current {
+		if current, err := q.Renew(ctx, got.RunID, "", wrong); err != nil || current {
 			t.Fatalf("mismatched Renew accepted: current=%v err=%v", current, err)
 		}
-		if accepted, err := q.Ack(ctx, got.RunID, wrong); err != nil || accepted {
+		if accepted, err := q.Ack(ctx, got.RunID, "", wrong); err != nil || accepted {
 			t.Fatalf("mismatched Ack accepted: accepted=%v err=%v", accepted, err)
 		}
-		if current, err := q.Renew(ctx, got.RunID, got.Generation); err != nil || !current {
+		if current, err := q.Renew(ctx, got.RunID, "", got.Generation); err != nil || !current {
 			t.Fatalf("exact Renew: current=%v err=%v", current, err)
 		}
-		if accepted, err := q.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
+		if accepted, err := q.Ack(ctx, got.RunID, "", got.Generation); err != nil || !accepted {
 			t.Fatalf("exact Ack: accepted=%v err=%v", accepted, err)
 		}
 	})
@@ -598,7 +599,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
 			t.Fatalf("Dequeue: %v", err)
 		}
-		if accepted, err := q.Ack(ctx, "run-lookup-ack", 1); err != nil || !accepted {
+		if accepted, err := q.Ack(ctx, "run-lookup-ack", "", 1); err != nil || !accepted {
 			t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
 		}
 		looked, err := q.LookupInflight(ctx, "run-lookup-ack")
@@ -619,7 +620,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		if _, err := q.Dequeue(ctx, "test-runner", time.Second); err != nil {
 			t.Fatalf("Dequeue: %v", err)
 		}
-		if err := q.Cancel(ctx, "run-lookup-cancel"); err != nil {
+		if err := q.Cancel(ctx, "run-lookup-cancel", ""); err != nil {
 			t.Fatalf("Cancel: %v", err)
 		}
 		looked, err := q.LookupInflight(ctx, "run-lookup-cancel")
@@ -747,13 +748,13 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 				t.Fatalf("poison was queued: depth=%d err=%v", depth, err)
 			}
 		}
-		if accepted, err := q.Ack(ctx, job.RunID, dead[0].Generation); err != nil || accepted {
+		if accepted, err := q.Ack(ctx, job.RunID, "", dead[0].Generation); err != nil || accepted {
 			t.Fatalf("diagnostic next-generation Ack must be rejected: accepted=%t err=%v", accepted, err)
 		}
-		if accepted, err := q.Ack(ctx, job.RunID, 0); err != nil || accepted {
+		if accepted, err := q.Ack(ctx, job.RunID, "", 0); err != nil || accepted {
 			t.Fatalf("zero Ack must not consume positive poison lease: accepted=%t err=%v", accepted, err)
 		}
-		if current, err := q.Renew(ctx, job.RunID, liveGeneration); err != nil || !current {
+		if current, err := q.Renew(ctx, job.RunID, "", liveGeneration); err != nil || !current {
 			t.Fatalf("same-attempt renewal lost before completion: current=%t err=%v", current, err)
 		}
 		n, repeated, err := r.ReclaimStale(ctx, -time.Second, maxRetries)
@@ -762,7 +763,7 @@ func RunJobQueueSuite(t *testing.T, factory JobQueueFactory) {
 		}
 		// Only a successfully persisted/finalized result may acknowledge the
 		// retained live generation, which is diagnostic Generation-1.
-		if accepted, err := q.Ack(ctx, job.RunID, dead[0].Generation-1); err != nil || !accepted {
+		if accepted, err := q.Ack(ctx, job.RunID, "", dead[0].Generation-1); err != nil || !accepted {
 			t.Fatalf("durable completion Ack failed: accepted=%t err=%v", accepted, err)
 		}
 		if live, err := q.LookupInflight(ctx, job.RunID); err != nil || live != nil {
@@ -789,23 +790,24 @@ type staleReclaimer interface {
 
 // RunEventBrokerSuite runs all conformance tests for an EventBroker implementation.
 func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
+	runRecordBrokerTests(t, factory)
 	t.Run("publish_subscribe", func(t *testing.T) {
 		b := factory()
 		ctx := context.Background()
 		runID := "run-evt-001"
 
-		ch, err := b.Subscribe(ctx, runID)
+		ch, err := b.Subscribe(ctx, runID, "")
 		if err != nil {
 			t.Fatalf("Subscribe failed: %v", err)
 		}
 
 		event := makeEvent(runID, 1, "values", map[string]string{"key": "val"})
-		if err := b.Publish(ctx, runID, event); err != nil {
+		if err := b.Publish(ctx, runID, "", event); err != nil {
 			t.Fatalf("Publish failed: %v", err)
 		}
 
 		endEvent := makeEvent(runID, 2, "end", map[string]string{"status": "success"})
-		if err := b.Publish(ctx, runID, endEvent); err != nil {
+		if err := b.Publish(ctx, runID, "", endEvent); err != nil {
 			t.Fatalf("Publish end failed: %v", err)
 		}
 
@@ -830,14 +832,14 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		ctx := context.Background()
 		runID := "run-fanout"
 
-		ch1, _ := b.Subscribe(ctx, runID)
-		ch2, _ := b.Subscribe(ctx, runID)
+		ch1, _ := b.Subscribe(ctx, runID, "")
+		ch2, _ := b.Subscribe(ctx, runID, "")
 
 		event := makeEvent(runID, 1, "values", map[string]string{"k": "v"})
-		_ = b.Publish(ctx, runID, event)
+		_ = b.Publish(ctx, runID, "", event)
 
 		endEvent := makeEvent(runID, 2, "end", map[string]string{"status": "success"})
-		_ = b.Publish(ctx, runID, endEvent)
+		_ = b.Publish(ctx, runID, "", endEvent)
 
 		var count1, count2 int
 		for range ch1 {
@@ -860,14 +862,14 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		ctx := context.Background()
 		runID := "run-order"
 
-		ch, _ := b.Subscribe(ctx, runID)
+		ch, _ := b.Subscribe(ctx, runID, "")
 
 		for i := int64(1); i <= 10; i++ {
 			event := makeEvent(runID, i, "values", map[string]int64{"seq": i})
-			_ = b.Publish(ctx, runID, event)
+			_ = b.Publish(ctx, runID, "", event)
 		}
 		endEvent := makeEvent(runID, 11, "end", map[string]string{"status": "success"})
-		_ = b.Publish(ctx, runID, endEvent)
+		_ = b.Publish(ctx, runID, "", endEvent)
 
 		var lastSeq int64
 		for evt := range ch {
@@ -885,13 +887,13 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		b := factory()
 		ctx := context.Background()
 
-		chA, _ := b.Subscribe(ctx, "run-A")
-		chB, _ := b.Subscribe(ctx, "run-B")
+		chA, _ := b.Subscribe(ctx, "run-A", "")
+		chB, _ := b.Subscribe(ctx, "run-B", "")
 
-		_ = b.Publish(ctx, "run-A", makeEvent("run-A", 1, "values", map[string]string{"run": "A"}))
-		_ = b.Publish(ctx, "run-A", makeEvent("run-A", 2, "end", map[string]string{"status": "success"}))
-		_ = b.Publish(ctx, "run-B", makeEvent("run-B", 1, "values", map[string]string{"run": "B"}))
-		_ = b.Publish(ctx, "run-B", makeEvent("run-B", 2, "end", map[string]string{"status": "success"}))
+		_ = b.Publish(ctx, "run-A", "", makeEvent("run-A", 1, "values", map[string]string{"run": "A"}))
+		_ = b.Publish(ctx, "run-A", "", makeEvent("run-A", 2, "end", map[string]string{"status": "success"}))
+		_ = b.Publish(ctx, "run-B", "", makeEvent("run-B", 1, "values", map[string]string{"run": "B"}))
+		_ = b.Publish(ctx, "run-B", "", makeEvent("run-B", 2, "end", map[string]string{"status": "success"}))
 
 		for evt := range chA {
 			if evt.EventID != "" && evt.EventID[:5] != "run-A" {
@@ -911,12 +913,12 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		runID := "run-replay"
 
 		for i := int64(1); i <= 5; i++ {
-			_ = b.Publish(ctx, runID, makeEvent(runID, i, "values", map[string]int64{"i": i}))
+			_ = b.Publish(ctx, runID, "", makeEvent(runID, i, "values", map[string]int64{"i": i}))
 		}
-		_ = b.Publish(ctx, runID, makeEvent(runID, 6, "end", map[string]string{"status": "success"}))
+		_ = b.Publish(ctx, runID, "", makeEvent(runID, 6, "end", map[string]string{"status": "success"}))
 
 		// Replay from seq 3 -- should get events 4, 5, 6
-		events, err := b.Replay(ctx, runID, 3)
+		events, err := b.Replay(ctx, runID, "", 3)
 		if err != nil {
 			t.Fatalf("Replay failed: %v", err)
 		}
@@ -934,11 +936,11 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		runID := "run-replay-all"
 
 		for i := int64(1); i <= 3; i++ {
-			_ = b.Publish(ctx, runID, makeEvent(runID, i, "values", nil))
+			_ = b.Publish(ctx, runID, "", makeEvent(runID, i, "values", nil))
 		}
-		_ = b.Publish(ctx, runID, makeEvent(runID, 4, "end", map[string]string{"status": "success"}))
+		_ = b.Publish(ctx, runID, "", makeEvent(runID, 4, "end", map[string]string{"status": "success"}))
 
-		events, err := b.Replay(ctx, runID, 0)
+		events, err := b.Replay(ctx, runID, "", 0)
 		if err != nil {
 			t.Fatalf("Replay failed: %v", err)
 		}
@@ -952,13 +954,13 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 		ctx := context.Background()
 		runID := "run-burst"
 
-		ch, _ := b.Subscribe(ctx, runID)
+		ch, _ := b.Subscribe(ctx, runID, "")
 
 		n := int64(100)
 		for i := int64(1); i <= n; i++ {
-			_ = b.Publish(ctx, runID, makeEvent(runID, i, "values", nil))
+			_ = b.Publish(ctx, runID, "", makeEvent(runID, i, "values", nil))
 		}
-		_ = b.Publish(ctx, runID, makeEvent(runID, n+1, "end", map[string]string{"status": "success"}))
+		_ = b.Publish(ctx, runID, "", makeEvent(runID, n+1, "end", map[string]string{"status": "success"}))
 
 		var count int64
 		for range ch {
@@ -976,17 +978,18 @@ func RunEventBrokerSuite(t *testing.T, factory EventBrokerFactory) {
 
 // RunCancelBrokerSuite runs all conformance tests for a CancelBroker implementation.
 func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
+	runRecordCancelTests(t, factory)
 	t.Run("cancel_signal_received", func(t *testing.T) {
 		c := factory()
 		ctx := context.Background()
 		runID := "run-cancel-001"
 
-		ch, err := c.SubscribeCancel(ctx, runID)
+		ch, err := c.SubscribeCancel(ctx, runID, "")
 		if err != nil {
 			t.Fatalf("SubscribeCancel failed: %v", err)
 		}
 
-		if err := c.PublishCancel(ctx, runID); err != nil {
+		if err := c.PublishCancel(ctx, runID, ""); err != nil {
 			t.Fatalf("PublishCancel failed: %v", err)
 		}
 
@@ -1003,7 +1006,7 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		ctx := context.Background()
 
 		// Cancel a run that no one is subscribed to -- should not error
-		if err := c.PublishCancel(ctx, "run-nonexistent"); err != nil {
+		if err := c.PublishCancel(ctx, "run-nonexistent", ""); err != nil {
 			t.Errorf("PublishCancel on nonexistent run should not error: %v", err)
 		}
 	})
@@ -1013,10 +1016,10 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		ctx := context.Background()
 		runID := "run-cancel-multi"
 
-		ch1, _ := c.SubscribeCancel(ctx, runID)
-		ch2, _ := c.SubscribeCancel(ctx, runID)
+		ch1, _ := c.SubscribeCancel(ctx, runID, "")
+		ch2, _ := c.SubscribeCancel(ctx, runID, "")
 
-		_ = c.PublishCancel(ctx, runID)
+		_ = c.PublishCancel(ctx, runID, "")
 
 		var received atomic.Int32
 
@@ -1060,7 +1063,7 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		runID := "run-ctx-cancel-001"
 
-		ch, err := c.SubscribeCancel(ctx, runID)
+		ch, err := c.SubscribeCancel(ctx, runID, "")
 		if err != nil {
 			t.Fatalf("SubscribeCancel failed: %v", err)
 		}
@@ -1090,25 +1093,25 @@ func RunCancelBrokerSuite(t *testing.T, factory CancelBrokerFactory) {
 		ctx, cancel := context.WithCancel(context.Background())
 		runID := "run-ctx-cancel-race"
 
-		if _, err := c.SubscribeCancel(ctx, runID); err != nil {
+		if _, err := c.SubscribeCancel(ctx, runID, ""); err != nil {
 			t.Fatalf("SubscribeCancel failed: %v", err)
 		}
 
 		var wg sync.WaitGroup
 		wg.Add(2)
 		go func() { defer wg.Done(); cancel() }()
-		go func() { defer wg.Done(); _ = c.PublishCancel(context.Background(), runID) }()
+		go func() { defer wg.Done(); _ = c.PublishCancel(context.Background(), runID, "") }()
 		wg.Wait()
 
 		// Give both cleanup paths a moment to run; the real assertion
 		// is simply that this doesn't panic (double-close) and a fresh
 		// subscribe for a different run_id still works afterward.
 		time.Sleep(100 * time.Millisecond)
-		freshCh, err := c.SubscribeCancel(context.Background(), "run-after-race")
+		freshCh, err := c.SubscribeCancel(context.Background(), "run-after-race", "")
 		if err != nil {
 			t.Fatalf("SubscribeCancel after race failed: %v", err)
 		}
-		_ = c.PublishCancel(context.Background(), "run-after-race")
+		_ = c.PublishCancel(context.Background(), "run-after-race", "")
 		select {
 		case <-freshCh:
 		case <-time.After(2 * time.Second):

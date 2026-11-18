@@ -84,7 +84,7 @@ func TestRedisPoisonCompletionCannotTargetAnotherTenantsPrefixRun(t *testing.T) 
 		if dispatched, err := queue.Dequeue(ctx, job.RunnerKind, time.Second); err != nil || dispatched == nil || dispatched.RunID != job.RunID {
 			t.Fatalf("dispatch: assignment=%+v err=%v", dispatched, err)
 		}
-		if accepted, err := store.BeginRunAttempt(scoped, job.RunID, job.Generation); err != nil || !accepted {
+		if accepted, err := store.BeginRunAttempt(scoped, job.RunID, originalRunIdentity(t, store, job.RunID), job.Generation); err != nil || !accepted {
 			t.Fatalf("begin attempt: accepted=%t err=%v", accepted, err)
 		}
 	}
@@ -134,7 +134,7 @@ func TestRedisPoisonCompletionCannotTargetAnotherTenantsPrefixRun(t *testing.T) 
 	if lease, err := queue.LookupInflight(ctx, victimID); err != nil || lease == nil || lease.Generation != 1 || lease.TenantID != "victim-tenant" {
 		t.Fatalf("victim lease changed: assignment=%+v err=%v", lease, err)
 	}
-	if acknowledged, err := queue.Ack(ctx, sourceID, 2); err != nil || !acknowledged {
+	if acknowledged, err := queue.Ack(ctx, sourceID, originalRunIdentity(t, store, sourceID), 2); err != nil || !acknowledged {
 		t.Fatalf("source acknowledgement: accepted=%t err=%v", acknowledged, err)
 	}
 }

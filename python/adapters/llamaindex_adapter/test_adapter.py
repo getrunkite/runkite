@@ -80,7 +80,12 @@ async def test_execute_happy_path_emits_expected_events():
 
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r1", "graph_id": "my_engine", "input": {"messages": [{"role": "user", "content": "hi there"}]}},
+        {
+            "run_id": "r1",
+            "graph_id": "my_engine",
+            "input": {"messages": [{"role": "user", "content": "hi there"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )
@@ -114,6 +119,7 @@ async def test_reconstructs_history_and_uses_last_message_as_input():
                     {"role": "user", "content": "second turn"},
                 ]
             },
+            "run_incarnation_id": "record-fixture",
         },
         callback,
         None,
@@ -141,6 +147,7 @@ async def test_two_runs_sharing_one_engine_dont_leak_history():
             "run_id": "r3a",
             "graph_id": "shared",
             "input": {"messages": [{"role": "user", "content": "thread A message"}]},
+            "run_incarnation_id": "record-fixture",
         },
         callback,
         None,
@@ -152,6 +159,7 @@ async def test_two_runs_sharing_one_engine_dont_leak_history():
             "run_id": "r3b",
             "graph_id": "shared",
             "input": {"messages": [{"role": "user", "content": "thread B message"}]},
+            "run_incarnation_id": "record-fixture",
         },
         callback,
         None,
@@ -162,7 +170,9 @@ async def test_two_runs_sharing_one_engine_dont_leak_history():
 async def test_unknown_graph_id_reports_error():
     adapter = LlamaIndexAdapter()
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r4", "graph_id": "nope", "input": {}}, callback, None)
+    status = await adapter.execute(
+        {"run_id": "r4", "graph_id": "nope", "input": {}, "run_incarnation_id": "record-fixture"}, callback, None
+    )
     check("unknown graph_id -> error status", status == "error")
     check("error event emitted", any(e["method"] == "error" for e in events))
 
@@ -171,7 +181,11 @@ async def test_empty_messages_reports_error_without_crashing():
     adapter = LlamaIndexAdapter()
     adapter.engines["my_engine"] = _FakeEngine()
     callback, events = _collector()
-    status = await adapter.execute({"run_id": "r5", "graph_id": "my_engine", "input": {"messages": []}}, callback, None)
+    status = await adapter.execute(
+        {"run_id": "r5", "graph_id": "my_engine", "input": {"messages": []}, "run_incarnation_id": "record-fixture"},
+        callback,
+        None,
+    )
     check("empty messages -> error status, not a crash", status == "error")
     check("error event emitted", any(e["method"] == "error" for e in events))
 
@@ -181,7 +195,12 @@ async def test_engine_exception_reports_error():
     adapter.engines["my_engine"] = _FakeEngine(raise_error=True)
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r6", "graph_id": "my_engine", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r6",
+            "graph_id": "my_engine",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )
@@ -205,7 +224,12 @@ async def test_cancel_event_interrupts_a_slow_engine():
     fire_task = asyncio.ensure_future(_fire_cancel_soon())
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r7", "graph_id": "my_engine", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r7",
+            "graph_id": "my_engine",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         cancel_event,
     )
@@ -233,7 +257,12 @@ async def test_real_reply_with_no_usage_anywhere_is_flagged_unmetered():
 
     callback, events = _collector()
     status = await adapter.execute(
-        {"run_id": "r-unmetered", "graph_id": "my_engine", "input": {"messages": [{"role": "user", "content": "hi"}]}},
+        {
+            "run_id": "r-unmetered",
+            "graph_id": "my_engine",
+            "input": {"messages": [{"role": "user", "content": "hi"}]},
+            "run_incarnation_id": "record-fixture",
+        },
         callback,
         None,
     )

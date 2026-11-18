@@ -59,14 +59,14 @@ func runMCPAgentInBackground(t *testing.T, env *testEnv, reply string) {
 		data, _ := json.Marshal(map[string]interface{}{
 			"messages": []map[string]interface{}{{"role": "ai", "content": reply}},
 		})
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "values",
 			Namespace: []string{}, Data: data, Ts: time.Now().UnixMilli(),
-		})
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		}))
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_2", Seq: 2, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 }
 
@@ -194,10 +194,10 @@ func TestMCP_RawInputOverridesMessage(t *testing.T) {
 			return
 		}
 		capturedInput = assignment.Input
-		env.broker.Publish(ctx, assignment.RunID, &transport.RunEvent{
+		env.broker.Publish(ctx, assignment.RunID, originalRunIdentity(t, assignment, assignment.RunID), withOriginalRunEvent(originalRunIdentity(t, assignment, assignment.RunID), &transport.RunEvent{
 			EventID: assignment.RunID + "_evt_1", Seq: 1, Method: "end",
 			Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-		})
+		}))
 	}()
 
 	session := mcpConnect(t, env.srv.URL, nil)

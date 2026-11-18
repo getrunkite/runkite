@@ -69,7 +69,7 @@ func TestAck_PreventsReclaim(t *testing.T) {
 		t.Fatal("expected job")
 		return
 	}
-	if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || !accepted {
+	if accepted, err := q.Ack(ctx, got.RunID, "", 0); err != nil || !accepted {
 		t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
 	}
 

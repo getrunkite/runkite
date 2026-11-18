@@ -38,38 +38,38 @@ func RunWorkloadIdentityQueueSuite(t *testing.T, factory func() (transport.JobQu
 	if string(live.Input) != string(input) {
 		t.Fatalf("input bytes changed: %s", live.Input)
 	}
-	if accepted, err := b.Renew(context.Background(), job.RunID, 1); err != nil || accepted {
+	if accepted, err := b.Renew(context.Background(), job.RunID, "", 1); err != nil || accepted {
 		t.Fatalf("missing identity renewed owned work: %t %v", accepted, err)
 	}
-	if accepted, err := b.Ack(context.Background(), job.RunID, 1); err != nil || accepted {
+	if accepted, err := b.Ack(context.Background(), job.RunID, "", 1); err != nil || accepted {
 		t.Fatalf("missing identity acknowledged owned work: %t %v", accepted, err)
 	}
-	if accepted, err := b.Renew(ctxB, job.RunID, 1); err != nil || accepted {
+	if accepted, err := b.Renew(ctxB, job.RunID, "", 1); err != nil || accepted {
 		t.Fatalf("peer renewed: %t %v", accepted, err)
 	}
-	if accepted, err := b.Ack(ctxB, job.RunID, 1); err != nil || accepted {
+	if accepted, err := b.Ack(ctxB, job.RunID, "", 1); err != nil || accepted {
 		t.Fatalf("peer acknowledged: %t %v", accepted, err)
 	}
-	if err := b.Nack(ctxB, job.RunID, 1); err != nil {
+	if err := b.Nack(ctxB, job.RunID, "", 1); err != nil {
 		t.Fatal(err)
 	}
 	if live, err := a.LookupInflight(context.Background(), job.RunID); err != nil || live == nil {
 		t.Fatalf("peer removed assignment: %v %v", live, err)
 	}
-	if err := a.Nack(ctxA, job.RunID, 1); err != nil {
+	if err := a.Nack(ctxA, job.RunID, "", 1); err != nil {
 		t.Fatal(err)
 	}
 	replacement, err := b.Dequeue(ctxB, "kind", time.Second)
 	if err != nil || replacement == nil || replacement.Generation != 2 || !transport.MatchesWorkload(replacement.WorkloadOwner, &ownerB, time.Now()) {
 		t.Fatalf("Nack replacement not rebound at a fresh generation: %#v %v", replacement, err)
 	}
-	if accepted, err := a.Renew(ctxA, job.RunID, 2); err != nil || accepted {
+	if accepted, err := a.Renew(ctxA, job.RunID, "", 2); err != nil || accepted {
 		t.Fatalf("old key borrowed new generation: %t %v", accepted, err)
 	}
-	if accepted, err := b.Renew(ctxB, job.RunID, 2); err != nil || !accepted {
+	if accepted, err := b.Renew(ctxB, job.RunID, "", 2); err != nil || !accepted {
 		t.Fatalf("owner renewal: %t %v", accepted, err)
 	}
-	if accepted, err := b.Ack(ctxB, job.RunID, 2); err != nil || !accepted {
+	if accepted, err := b.Ack(ctxB, job.RunID, "", 2); err != nil || !accepted {
 		t.Fatalf("owner acknowledgement: %t %v", accepted, err)
 	}
 	if live, err := a.LookupInflight(context.Background(), job.RunID); err != nil || live != nil {
@@ -83,10 +83,10 @@ func RunWorkloadIdentityQueueSuite(t *testing.T, factory func() (transport.JobQu
 		t.Fatal(recoverable, err)
 	}
 	trusted := transport.TrustedQueueContext(context.Background())
-	if accepted, err := b.Ack(trusted, recoverable.RunID, 2); err != nil || accepted {
+	if accepted, err := b.Ack(trusted, recoverable.RunID, "", 2); err != nil || accepted {
 		t.Fatalf("trusted recovery bypassed generation: %t %v", accepted, err)
 	}
-	if accepted, err := b.Ack(trusted, recoverable.RunID, 3); err != nil || !accepted {
+	if accepted, err := b.Ack(trusted, recoverable.RunID, "", 3); err != nil || !accepted {
 		t.Fatalf("trusted retained-attempt recovery failed: %t %v", accepted, err)
 	}
 }

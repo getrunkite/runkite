@@ -196,7 +196,7 @@ func TestRunObservationFencesReplacementDuringWaitAndCompletion(t *testing.T) {
 	}
 	// A replacement after the API's last read must also be rejected under the
 	// completion transaction lock, even when generation and all public IDs match.
-	result, err := f.store.CompleteRun(ctx, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: original.IncarnationID, RunID: original.RunID, Status: models.RunStatusSuccess, Values: map[string]interface{}{"leak": "old"}})
+	result, err := f.store.CompleteRun(ctx, withOriginalCompletion(t, f.store, &state.RunCompletion{TrustedSystem: true, ExpectedIncarnationID: original.IncarnationID, RunID: original.RunID, Status: models.RunStatusSuccess, Values: map[string]interface{}{"leak": "old"}}))
 	if !errors.As(err, &conflict) || result.Applied {
 		t.Fatalf("stale completion: %+v %v", result, err)
 	}
@@ -231,10 +231,10 @@ func TestRunObservationCompletionRaceCannotSettleReplacement(t *testing.T) {
 			t.Fatal(err)
 		}
 	}}
-	if err := f.broker.Publish(ctx, original.RunID, &transport.RunEvent{EventID: "stale-values", Seq: 1, Method: "values", Data: json.RawMessage(`{"answer":"old"}`)}); err != nil {
+	if err := f.broker.Publish(ctx, original.RunID, originalRunIdentity(t, original, original.RunID), withOriginalRunEvent(originalRunIdentity(t, original, original.RunID), &transport.RunEvent{EventID: "stale-values", Seq: 1, Method: "values", Data: json.RawMessage(`{"answer":"old"}`)})); err != nil {
 		t.Fatal(err)
 	}
-	if err := f.broker.Publish(ctx, original.RunID, &transport.RunEvent{EventID: "stale-end", Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)}); err != nil {
+	if err := f.broker.Publish(ctx, original.RunID, originalRunIdentity(t, original, original.RunID), withOriginalRunEvent(originalRunIdentity(t, original, original.RunID), &transport.RunEvent{EventID: "stale-end", Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)})); err != nil {
 		t.Fatal(err)
 	}
 	result, err := f.plane.waitForRunObservation(ctx, original)

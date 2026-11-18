@@ -145,3 +145,25 @@ test("shouldSkipRun keeps a custom run ID inside one URL path component", async 
     globalThis.fetch = original;
   }
 });
+
+test("an unpooled runner never executes after original-record authority is denied", async () => {
+  const original = globalThis.fetch;
+  try {
+    for (const status of [401, 403]) {
+      globalThis.fetch = (async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        assert.equal(headers.get("X-Runkite-Run-Incarnation"), "original-record");
+        return new Response("authority denied", { status });
+      }) as typeof fetch;
+      assert.equal(
+        await shouldSkipRun("http://cp:2026", "same-run", {
+          generation: 1,
+          runIncarnationId: "original-record",
+        }),
+        true,
+      );
+    }
+  } finally {
+    globalThis.fetch = original;
+  }
+});

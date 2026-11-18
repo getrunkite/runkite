@@ -47,6 +47,7 @@ function clientFixture(options: { supersededGeneration?: string } = {}) {
 
 const assignment = {
   run_id: "run-managed",
+  run_incarnation_id: "record-managed",
   thread_id: "thread-managed",
   graph_id: "agent-managed",
   tenant_id: "tenant-managed",
@@ -69,6 +70,7 @@ test("generic executor uses the same run binding, generation and acknowledged co
         "X-Runkite-Tenant-Id": "tenant-managed",
         "X-Runkite-Run-Id": "run-managed",
         "X-Runkite-Generation": "7",
+        "X-Runkite-Run-Incarnation": "record-managed",
         "X-Runner-Kind": "typescript-ai-sdk",
         "X-Runner-Token": "runner-token",
       });
@@ -86,10 +88,18 @@ test("generic executor uses the same run binding, generation and acknowledged co
     { runnerKind: "typescript-ai-sdk", runnerToken: "runner-token" },
   );
   assert.equal(fixture.events.length, 2);
-  assert.ok(fixture.events.every((entry) => entry.runId === assignment.run_id && entry.generation === "7"));
+  assert.ok(
+    fixture.events.every(
+      (entry) =>
+        entry.runId === assignment.run_id &&
+        entry.generation === "7" &&
+        entry.runIncarnationId === assignment.run_incarnation_id,
+    ),
+  );
   assert.equal(fixture.reports.length, 1);
   assert.equal(fixture.reports[0].status, "success");
   assert.equal(fixture.reports[0].generation, "7");
+  assert.equal(fixture.reports[0].runIncarnationId, assignment.run_incarnation_id);
   assert.deepEqual(fixture.order, ["event", "event", "stream acknowledged", "completion accepted"]);
   assert.equal(pending.size, 0);
 });
@@ -98,7 +108,7 @@ test("generic executor observes a cancel received before dispatch registration",
   t.mock.timers.enable({ apis: ["setTimeout"] });
   const fixture = clientFixture();
   const pending = new Map<string, CancelState>();
-  recordCancelSignal(pending, assignment.run_id);
+  recordCancelSignal(pending, assignment.run_id, assignment.run_incarnation_id);
   const executor: RunExecutor = {
     async execute(_received, emit, isCancelled) {
       assert.equal(isCancelled(), true);
@@ -207,7 +217,7 @@ test("finishing an older attempt does not hide a later user cancel from its repl
   try {
     older.finish();
     await older.done;
-    recordCancelSignal(pending, assignment.run_id);
+    recordCancelSignal(pending, assignment.run_id, assignment.run_incarnation_id);
     assert.equal(current.isCancelled(), true);
   } finally {
     current.finish();
@@ -225,7 +235,7 @@ test("WatchCancels fans a user cancel out to every active generation in handleJo
   const older = await pausedAttempt(fixture, pending, 7);
   const current = await pausedAttempt(fixture, pending, 8);
   try {
-    recordCancelSignal(pending, assignment.run_id);
+    recordCancelSignal(pending, assignment.run_id, assignment.run_incarnation_id);
     assert.equal(older.isCancelled(), true);
     assert.equal(current.isCancelled(), true);
   } finally {
@@ -236,4 +246,29 @@ test("WatchCancels fans a user cancel out to every active generation in handleJo
   assert.ok(fixture.reports.every((report) => report.status === "interrupted"));
   t.mock.timers.tick(5 * 60 * 1000);
   assert.equal(pending.size, 0);
+});
+
+test("missing or malformed original proof never reaches the executor or completion RPC", async () => {
+  for (const proof of [undefined, "", "bad record", "bad\nrecord", "é", "a".repeat(257)]) {
+    const fixture = clientFixture();
+    let executions = 0;
+    const executor: RunExecutor = {
+      async execute() {
+        executions++;
+        return "success";
+      },
+    };
+    const pending = new Map<string, CancelState>();
+    await handleJob(
+      fixture.client,
+      executor,
+      { hasJob: true, assignmentJson: JSON.stringify({ ...assignment, run_incarnation_id: proof }) },
+      new Metadata(),
+      pending,
+    );
+    assert.equal(executions, 0);
+    assert.equal(fixture.events.length, 0);
+    assert.equal(fixture.reports.length, 0);
+    assert.equal(pending.size, 0);
+  }
 });

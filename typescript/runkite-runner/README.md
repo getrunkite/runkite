@@ -10,6 +10,14 @@ optional Postgres checkpoints. `runner_kind`: `typescript-langgraphjs`.
 
 Requires Node.js 22.19 or newer, matching the locked Undici HTTP client.
 
+The 0.10.0 source contract requires matching record-aware planes and workers.
+Published 0.9.0 packages do not implement that contract. This README does not
+establish registry publication: until matching artifacts are published and
+verified, build the plane from the same checkout and run this package with
+`npm ci && npm run build`, then `node dist/cli.js` from its directory. Unpinned
+registry installation below selects the available published version. Follow the
+[coordinated upgrade](../../docs/ops-runbook.md#assignment-identity-upgrade).
+
 | | |
 |---|---|
 | **Install** | `npm install -g runkite-runner` |
@@ -109,7 +117,7 @@ settings, imported from `runkite-runner/ai-sdk`. The runner constructs the nativ
 It records real managed threads/runs and reports native provider token usage.
 
 Native model/tool message history persists through the plane's run-bound opaque
-checkpoint API, using TLS, tenant/kind credentials, generation headers and CAS.
+checkpoint API, using TLS, tenant/kind credentials, original-record proof, generation headers and CAS.
 Success and UI finish follow the confirmed state commit. A committed turn can be
 replayed after reclaim without invoking its model or tools again. A crash before
 that commit can still repeat an external side effect; use downstream idempotency.
@@ -132,6 +140,28 @@ output that cannot be delivered or replayed.
 See the [managed AI SDK example](../../examples/managed_ai_sdk/README.md) for a
 working offline factory and an application-owned `useChat` stream bridge. That
 bridge keeps browser authentication and server credentials in your app.
+
+## Assignment identity upgrade (0.10.0 source contract)
+
+Use matching proof-aware runners and control planes. Workers advertise
+`assignment_identity_version=1` for GetJob and WatchCancels, validate the
+assignment's `run_incarnation_id` before agent work, and echo it on heartbeats,
+events, completion and bound HTTP calls. Internal helpers send
+`X-Runkite-Run-Incarnation` alongside the public run ID and generation.
+The plane rejects missing or mismatched proof rather than borrowing authority
+from a replacement record.
+
+Back up and drain all writers and active/queued work before upgrading every plane,
+worker and custom store together. Apply Postgres/SQLite migration 23 or MySQL
+migration 24 before traffic resumes; startup also migrates. Keep legacy unbound
+accounting and receipts for explicit reconciliation, rather than rewriting their
+identity to force execution.
+The AI SDK committed receipt includes original identity: same-record reclaim
+replays without another model/tool cycle; a different record with the same public
+ID executes a fresh turn. A legacy same-ID receipt without proof fails closed,
+while legacy history from a different run remains readable.
+See the [operations guide](../../docs/ops-runbook.md) and
+[engineering rationale](../../docs/internal/assignment-identity.md).
 
 ## Links
 

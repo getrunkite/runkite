@@ -57,7 +57,7 @@ func TestNATSQueueConsumerNameCollisionDoesNotRetargetAnotherKind(t *testing.T) 
 	if err != nil || got == nil || got.RunID != first.RunID || got.RunnerKind != first.RunnerKind {
 		t.Fatalf("original queue received another kind: job=%v err=%v", got, err)
 	}
-	if accepted, err := queueA.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
+	if accepted, err := queueA.Ack(ctx, got.RunID, "", got.Generation); err != nil || !accepted {
 		t.Fatalf("ack original: accepted=%t err=%v", accepted, err)
 	}
 	// The same native config is still idempotent across control planes. A
@@ -70,7 +70,7 @@ func TestNATSQueueConsumerNameCollisionDoesNotRetargetAnotherKind(t *testing.T) 
 	if err != nil || got == nil || got.RunID != second.RunID {
 		t.Fatalf("same-kind replica cannot fetch its work: job=%v err=%v", got, err)
 	}
-	if accepted, err := queueB.Ack(ctx, got.RunID, got.Generation); err != nil || !accepted {
+	if accepted, err := queueB.Ack(ctx, got.RunID, "", got.Generation); err != nil || !accepted {
 		t.Fatalf("ack replica: accepted=%t err=%v", accepted, err)
 	}
 	if job, err := queueB.Dequeue(ctx, "a_b", 10*time.Millisecond); err == nil || job != nil {

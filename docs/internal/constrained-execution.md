@@ -297,7 +297,8 @@ inferring it from a configuration hash, rendered policy or this bounded run.
 
 ## Combined HA, TLS and durable usage qualification
 
-v0.8.0 includes `scripts/test-isolated-ha.sh`. It starts dedicated
+The combined fixture already ships with v0.8.0 as `scripts/test-isolated-ha.sh`.
+RFE #47 does not require another HA runner or scheduler. The fixture starts dedicated
 Postgres/Redis containers with dynamic loopback mappings and a fresh fixture
 password, two actual TLS-enabled planes, a locally issued mTLS worker identity,
 an installed parent wheel and an external OpenShell 0.1.8 runtime. It does not
@@ -307,6 +308,8 @@ task-local CA/client certificates, verified supervisor callback TLS and no
 unauthenticated-user setting. The older standalone fixture retains its explicit
 loopback HTTP default for historical checks. No fixture qualifies an external
 identity service or production PKI lifecycle.
+Its TLS evidence covers Runkite HTTP/gRPC and the runtime gateway, not encrypted
+database transports: dedicated Postgres/Redis use loopback fixture connections.
 
 Prepare the binary, runner wheel and checksum-verified runtime CLI locally, then
 run from the repository root:
@@ -340,6 +343,12 @@ and requires verified access to recover. No failed request is retried over
 plaintext. These transport probes do not claim a long-lived certificate rollover
 or uninterrupted workload execution during gateway loss.
 
+The five lifecycle scenarios run once before the repetition loop. The one to
+twenty setting repeats the worker-ownership/partial-usage/plane-failure/cancel/
+restart settlement scenario, not every lifecycle case or a sustained concurrent
+load. Record both cycle count and measured duration; a short fault run is not a
+long-running soak merely because it is repeated.
+
 Its JSON report records each completed case, elapsed seconds and
 bounded repetitions. Preserve the failed run's private recovery directory for
 cleanup, but do not publish its private certificates or environment.
@@ -355,6 +364,52 @@ combined deployment. Record and review an actual `managed-evidence.json` and
 before making that claim.
 Neither a bounded fixture nor a verified reporter proves provider billing,
 continuous certificate rotation, indefinite soak or arbitrary SDK containment.
+
+### RFE #47 current-source qualification hardening (Unreleased)
+
+The existing combined fixture and its historical hosted pass below already
+establish the bounded composition requested by
+[RFE #47](https://github.com/getrunkite/runkite/issues/47): disposable
+Postgres/Redis, multiple plane processes, TLS/worker identity, cancellation,
+restart/reclaim, receipt replay and cleanup/fault checks. The current slice
+hardens execution and evidence around that fixture rather than introducing a
+new control-plane subsystem or claiming the older run qualified new source.
+
+Fixture child processes receive an explicit environment allowlist instead of
+ambient provider and OTLP export settings. Test-local credentials, endpoints,
+certificates and supported tool/cache settings are supplied deliberately.
+This reduces accidental requests to a developer's provider or collector; it is
+not network isolation, a secret scanner or host attestation. Use only the owned
+synthetic workload, never customer input or a shared application database.
+
+Local and hosted qualification use the same structured evidence checks.
+Success requires consistent measured managed-run, requested-cycle, gateway-TLS
+and owned-cleanup reports, not just a zero child exit or an inner
+`passed: true`. The outer local run is bounded and keeps cleanup time separate
+from workload execution. Missing, malformed, contradictory or incomplete
+evidence must remain failure. Retain only safe summaries for publication;
+private recovery files, credentials and full process environments are excluded.
+
+Cancellation evidence first requires actual workload activity, the matching
+live run generation and exact sandbox presence before cancellation. It then
+observes the specific worker-cancelled sandbox before the wrapper's final sweep.
+The read-only selector query must return a complete
+empty list for that owned attempt within the bounded wait. The assertion does
+not call delete to manufacture absence. A safe per-cancel observation records
+synthetic run/generation/sandbox identity, the read-only method and elapsed time.
+This measures the runtime record's absence after routine managed cancellation,
+not kernel attestation, reversal of tool effects or cleanup after every crash.
+Uncertain launch intents can still leave orphans requiring explicit operator
+reconciliation; the wrapper's separate final sweep is fixture cleanup, not a
+new production reconciler.
+
+The current candidate needs its own executed local/hosted receipts tied to the
+exact source and binary/wheel hashes. The November 15 run below is historical
+evidence, not a passing result for these new guards. RFE #47 remains open until
+its actual acceptance evidence is reviewed. [RFE #52](https://github.com/getrunkite/runkite/issues/52)
+remains a separate independent-review handoff; maintainer qualification does not
+self-certify it. Keep the external profile experimental, with no paid cloud,
+real-model, production PKI-rotation or indefinite-soak claim.
 
 ### Local engine networking
 

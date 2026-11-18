@@ -384,7 +384,11 @@ class NativeStateTests(unittest.IsolatedAsyncioTestCase):
             encode_state(value, **IDENTITY)
 
     async def test_bound_tenant_run_generation_and_credentials_reach_cas(self):
-        tokens = [bind_tenant("tenant-one"), bind_run("run-one", 3), bind_runner("python-google-adk", "secret")]
+        tokens = [
+            bind_tenant("tenant-one"),
+            bind_run("run-one", 3, run_incarnation_id="record-fixture"),
+            bind_runner("python-google-adk", "secret"),
+        ]
         try:
             store = self.store(state_json(self.value).encode())
             await store.load("thread-one", **IDENTITY)

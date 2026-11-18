@@ -109,15 +109,15 @@ func (f *mcpRetryFixture) seedRun(t *testing.T, ctx context.Context, id, threadI
 
 func (f *mcpRetryFixture) finish(t *testing.T, ctx context.Context, a *transport.RunAssignment, status models.RunStatus, text string) {
 	t.Helper()
-	if accepted, err := f.plane.BeginRunAttempt(ctx, a.RunID, a.Generation); err != nil || !accepted {
+	if accepted, err := f.plane.BeginRunAttempt(ctx, a.RunID, originalRunIdentity(t, a, a.RunID), a.Generation); err != nil || !accepted {
 		t.Fatalf("begin attempt: accepted=%v err=%v", accepted, err)
 	}
 	values, _ := json.Marshal(map[string]any{"messages": []map[string]any{{"role": "ai", "content": text}}})
-	if err := f.broker.Publish(ctx, a.RunID, &transport.RunEvent{EventID: a.RunID + "-values", Generation: a.Generation, Seq: 1, Method: "values", Data: values}); err != nil {
+	if err := f.broker.Publish(ctx, a.RunID, originalRunIdentity(t, a, a.RunID), withOriginalRunEvent(originalRunIdentity(t, a, a.RunID), &transport.RunEvent{EventID: a.RunID + "-values", Generation: a.Generation, Seq: 1, Method: "values", Data: values})); err != nil {
 		t.Fatal(err)
 	}
 	end, _ := json.Marshal(map[string]any{"status": status})
-	if err := f.broker.Publish(ctx, a.RunID, &transport.RunEvent{EventID: a.RunID + "-end", Generation: a.Generation, Seq: 2, Method: "end", Data: end}); err != nil {
+	if err := f.broker.Publish(ctx, a.RunID, originalRunIdentity(t, a, a.RunID), withOriginalRunEvent(originalRunIdentity(t, a, a.RunID), &transport.RunEvent{EventID: a.RunID + "-end", Generation: a.Generation, Seq: 2, Method: "end", Data: end})); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -622,7 +622,7 @@ type mcpRetryCanceledSubscribe struct {
 	cancel context.CancelFunc
 }
 
-func (b *mcpRetryCanceledSubscribe) Subscribe(ctx context.Context, _ string) (<-chan *transport.RunEvent, error) {
+func (b *mcpRetryCanceledSubscribe) Subscribe(ctx context.Context, _ string, incarnation string) (<-chan *transport.RunEvent, error) {
 	b.cancel()
 	return nil, ctx.Err()
 }

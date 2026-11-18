@@ -109,7 +109,7 @@ class GeminiWireTests(unittest.IsolatedAsyncioTestCase):
             if on_event is not None:
                 await on_event(event)
 
-        tenant, run = bind_tenant("tenant"), bind_run(run_id, 1)
+        tenant, run = bind_tenant("tenant"), bind_run(run_id, 1, run_incarnation_id="record-fixture")
         try:
             return await self.adapter.execute(
                 {
@@ -119,6 +119,7 @@ class GeminiWireTests(unittest.IsolatedAsyncioTestCase):
                     "tenant_id": "tenant",
                     "generation": 1,
                     "input": {"messages": [{"role": "user", "content": "hello"}]},
+                    "run_incarnation_id": "record-fixture",
                 },
                 emit,
                 cancel or asyncio.Event(),
@@ -268,10 +269,10 @@ async def main():
         value=original();value._client._transport=plane.transport();return value
     adapter._state=store
     adapter.factories['agent']=lambda context:LlmAgent(name='privacy_agent',model=Model(),tools=[lookup])
-    tenant,run=bind_tenant('tenant'),bind_run('run',1)
+    tenant,run=bind_tenant('tenant'),bind_run('run',1,run_incarnation_id='record-fixture')
     async def emit(event):pass
     try:
-        result=await adapter.execute({'graph_id':'agent','run_id':'run','thread_id':'thread','tenant_id':'tenant','generation':1,'input':{'messages':[{'role':'user','content':'PRIVATE_PROMPT_SENTINEL_719'}]}},emit,asyncio.Event())
+        result=await adapter.execute({'graph_id':'agent','run_id':'run','thread_id':'thread','tenant_id':'tenant','generation':1,'run_incarnation_id':'record-fixture','input':{'messages':[{'role':'user','content':'PRIVATE_PROMPT_SENTINEL_719'}]}},emit,asyncio.Event())
         assert result=='success',result
     finally:reset_run(run);reset_tenant(tenant)
     provider.force_flush()

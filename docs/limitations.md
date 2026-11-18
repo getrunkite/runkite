@@ -8,14 +8,22 @@ The [source integration guide](integrations.md#unreleased-current-source) maps
 checkout additions after published v0.9.0. Their presence on `main` does not
 change an existing binary, image, wheel or npm install.
 
-- Opaque checkpoint PUT/DELETE pin the original stored run record as well as
-  generation and terminal status, so a slow request cannot borrow authority
-  after same-ID recreation. Missing dispatch identity is rejected. SQL reuses
-  its incarnation; Mongo privately uses a nonzero ObjectID, with other `_id`
-  types refused. Upgrade all planes and drain older assignments without this
-  snapshot. This does not change checkpoint reads, blob CAS, direct framework
-  database writes or Mongo's SQL-only capability boundaries. See the
-  [record-fencing contract](internal/connector-action-evidence.md#opaque-checkpoint-record-fencing-unreleased).
+- Assignment identity protocol 1 is Unreleased/current-source and requires
+  matching planes and runners. Exact run ID, original record identity and
+  generation are echoed on bound HTTP and lifecycle RPCs; missing proof cannot
+  borrow the current assignment. Event and cancellation namespaces keep records
+  separate. This is continuity fencing, not authentication, attestation,
+  exactly-once effects or protection from a compromised current holder. Drain
+  old assignments and all writers, verify backups, apply Postgres/SQLite migration
+  23 or MySQL migration 24, then deploy matching builds. Legacy unbound accounting,
+  bare terminal-hook claims and same-ID receipts remain ambiguous; reconcile
+  collisions explicitly and use fresh operation IDs for intentional new work.
+  No automatic backfill or double-billing repair is provided. Mongo's private
+  ObjectID proof leaves public SQL-only capabilities unchanged. Kafka fails closed unless
+  `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true` explicitly accepts non-atomic
+  Compatible mode; Redis does not add cross-replica queue CAS. See the
+  [contract](internal/assignment-identity.md) and
+  [rollout](ops-runbook.md#assignment-identity-upgrade).
 - Scoped specialist observation is agent-wide on exact public GET/wait and
   requires SQL run references. It is not requester-private ownership, broad
   read authority, streaming or cancellation. First reference acquisition cannot
@@ -463,7 +471,7 @@ Honest gaps, not hidden ones:
   is retained with delayed negative acknowledgement for operator investigation.
   Postgres/Redis does not impose this NATS-only boundary. See the
   [operator notes](ops-runbook.md#follow-up-identity-and-completion-upgrade).
-- **Transport supports in-memory, Redis, NATS (JetStream), and Kafka.** See the NATS transport section for its own real difference from Redis: fencing generation reuses JetStream's native per-message delivery count instead of a hand-rolled counter, and `EventBroker.Close` is a documented no-op there (a late `Subscribe` on an already-finished run gets a silently-empty channel, not an immediately-closed one the way Redis's explicit closed-marker gives). Kafka is JobQueue-only (pair with Redis for broker/cancelbus). Multi-replica Kafka reclaim double-dispatch is closed when Redis is present (cluster-wide reclaim-leader lock); Kafka without Redis remains single-instance / experimental for that race -- see the Kafka transport section.
+- **Transport supports in-memory, Redis, NATS (JetStream), and explicit Kafka Compatible mode.** NATS retains its native delivery generation and documented `EventBroker.Close` no-op. Current source refuses Kafka queue construction unless `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true`. Kafka uses a materialized view and last-write-wins state appends, so identity comparisons are not cross-replica atomic CAS. Pairing Redis supplies event/cancel delivery and a reclaim-leader lease; it does not close queue mutation races. Kafka without Redis also has process-local event/cancel delivery and remains single-instance for those functions. See the [Kafka contract](architecture.md#kafka-transport-jobqueue-only--compatible-with-redis-experimental-without).
 - **Admin UI list endpoints support keyset `?cursor=` (preferred) and `?limit=&offset=`** (default 50, max 200). Full pages return `X-Next-Cursor`; cursor and offset are mutually exclusive. Agent Protocol client search stays offset-only. Overview uses real `COUNT`/`GROUP BY`.
 - **Factory Graph's `_ExecutionRuntime` construction depends on `langgraph_sdk`'s internal (underscore-prefixed) class.** `langgraph_sdk.runtime.ServerRuntime` has no public constructor -- factory_graph.py constructs `_ExecutionRuntime` directly, which could break on a `langgraph-sdk` upgrade that changes its internals; a `_MinimalRuntime` duck-typed stand-in (covering the same documented `.user`/`.store`/`.execution_runtime`/`.ensure_user()` surface) is used as a fallback if that construction fails, so factory graphs keep working either way for the common case.
 - **Factory Graph's `runtime.execution_runtime.context` is always the run's `configurable` dict, not a typed `context_schema` instance.** LangGraph Platform's own beta API supports strongly-typed context via a graph's declared `context_schema`; this passthrough is untyped (a plain dict), sufficient for factories that only read specific keys but not for ones relying on `context_schema`'s validation/defaults.
@@ -498,13 +506,25 @@ pools. Published v0.6.1 artifacts do not implement these controls.
 - Pools isolate fleet routing and credentials, not hostile code inside one worker.
   Helm egress manifests need an enforcing CNI. The external OpenShell JSONL bridge
   remains experimental, with explicit immutable image/policy and durable uncertain
-  launch handling. A disposable SQLite plane/installed pooled worker/OpenShell
+  launch handling. Historical v0.7.0 SQLite plane/installed pooled worker/OpenShell
   0.1.8 lifecycle qualification and a separate kind 0.33.0/Kubernetes 1.37.0
   default-kindnet egress qualification have passed. These do not qualify a
   different runtime/kernel/CNI, cloud metadata service, hostile workloads sharing
-  one worker, external multi-replica workload or live model/provider. Existing SDK
+  one worker, the later combined multi-replica profile or live model/provider. Existing SDK
   adapters do not become sandboxed merely by selecting a pool. See the
   [exact qualification scope](internal/constrained-execution.md#verification-and-remaining-qualification).
+- Combined external-runtime HA qualification is not missing: the v0.8.0 wrapper
+  already exercises two Postgres/Redis planes, TLS, installed-worker identity,
+  reclaim/receipt replay, cancellation, partial usage and bounded failover, with
+  a recorded historical hosted pass. Unreleased fixture hardening adds explicit
+  environment and structured acceptance controls plus a routine-cancellation
+  sandbox-absence observation before final cleanup. Current candidate evidence
+  must be measured separately. Repetition covers the partial-usage/failover
+  scenario, not all lifecycle cases or sustained load. Wrapper cleanup does not
+  establish worker cleanup after every crash; uncertain intents still need
+  reconciliation. The profile remains experimental, with independent RFE #52
+  assessment, production PKI rotation and long-running production soak outside
+  these bounded results. See [the precise combined scope](internal/constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased).
 - The Unreleased [effective-policy qualifier](internal/openshell-effective-policy.md)
   optionally captures matching current/loaded sandbox policy and compares it
   with the original boundary using the official OpenShell 0.1.8 checker.

@@ -198,6 +198,8 @@ type TraceContext struct {
 // RunEvent is an event published by a runner back to the control plane.
 // Fields match runner-protocol/schemas/run_event.json.
 type RunEvent struct {
+	// RunIncarnationID is stamped from the verified assignment, never event JSON.
+	RunIncarnationID string `json:"run_incarnation_id,omitempty"`
 	// Generation is stamped by the bridge, not trusted from event JSON.
 	Generation int64           `json:"generation,omitempty"`
 	EventID    string          `json:"event_id"`
@@ -234,7 +236,7 @@ type JobQueue interface {
 	// tracked for runID at all (already finished by the real owner, or
 	// never existed) -- both are "not this caller's job to finalize
 	// anymore," not an error.
-	Ack(ctx context.Context, runID string, generation int64) (accepted bool, err error)
+	Ack(ctx context.Context, runID, runIncarnationID string, generation int64) (accepted bool, err error)
 
 	// Renew extends an in-flight job's lease (resets its staleness clock)
 	// WITHOUT removing it from tracking, unlike Ack. Backs the runner
@@ -255,17 +257,17 @@ type JobQueue interface {
 	// (already Ack'd, reclaimed, or canceled) -- a late or racing
 	// renewal for a job that already finished must not resurrect it,
 	// it just gets current=false instead of true.
-	Renew(ctx context.Context, runID string, generation int64) (current bool, err error)
+	Renew(ctx context.Context, runID, runIncarnationID string, generation int64) (current bool, err error)
 
 	// Nack signals that the job was not processed successfully.
 	// The job is made available for re-delivery only if generation still
 	// identifies its current dispatch. A delayed failed GetJob must not
 	// remove or requeue a replacement attempt. Zero matches only zero.
-	Nack(ctx context.Context, runID string, generation int64) error
+	Nack(ctx context.Context, runID, runIncarnationID string, generation int64) error
 
 	// Cancel removes or poisons a job so it is not delivered to any runner.
 	// If already dequeued, the runner must do a pre-execution status check.
-	Cancel(ctx context.Context, runID string) error
+	Cancel(ctx context.Context, runID, runIncarnationID string) error
 
 	// Len returns the number of jobs currently in the queue.
 	Len(ctx context.Context) (int64, error)
@@ -292,25 +294,25 @@ type JobQueue interface {
 // Supports fan-out (multiple subscribers per run) and replay.
 type EventBroker interface {
 	// Publish sends an event for a run. All subscribers to this runID receive it.
-	Publish(ctx context.Context, runID string, event *RunEvent) error
+	Publish(ctx context.Context, runID, runIncarnationID string, event *RunEvent) error
 
 	// Subscribe returns a channel that receives events for the given runID.
 	// The channel is closed when the run ends or Close is called.
-	Subscribe(ctx context.Context, runID string) (<-chan *RunEvent, error)
+	Subscribe(ctx context.Context, runID, runIncarnationID string) (<-chan *RunEvent, error)
 
 	// Replay returns stored events for a run starting after the given sequence number.
 	// If sinceSeq is 0, returns all stored events.
-	Replay(ctx context.Context, runID string, sinceSeq int64) ([]*RunEvent, error)
+	Replay(ctx context.Context, runID, runIncarnationID string, sinceSeq int64) ([]*RunEvent, error)
 
 	// Close signals that a run is finished. Closes all subscriber channels
 	// and marks the run's event stream as complete.
-	Close(runID string) error
+	Close(runID, runIncarnationID string) error
 }
 
 // CancelBroker handles cancel signal delivery to runners.
 type CancelBroker interface {
 	// PublishCancel sends a cancel signal for the given runID.
-	PublishCancel(ctx context.Context, runID string) error
+	PublishCancel(ctx context.Context, runID, runIncarnationID string) error
 
 	// SubscribeCancel returns a channel that fires when a cancel is
 	// received for the given runID. The channel delivers at most one
@@ -332,5 +334,5 @@ type CancelBroker interface {
 	// subscription + 2 goroutines per run permanently, the real root
 	// cause of the Redis transport's concurrency-dependent latency
 	// blowup documented in bench/REPORT.md.
-	SubscribeCancel(ctx context.Context, runID string) (<-chan struct{}, error)
+	SubscribeCancel(ctx context.Context, runID, runIncarnationID string) (<-chan struct{}, error)
 }

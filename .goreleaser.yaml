@@ -76,9 +76,31 @@ release:
     - glob: ./spec/openapi.json
     - glob: ./spec/openapi-admin.json
     - glob: ./spec/openapi-internal.json
-  # Shown ABOVE the auto changelog so Downloads are the first thing people see.
+  # Shown above the auto changelog, including version-specific upgrade notices.
   # (GitHub still lists binary Assets in the Assets section below the notes.)
   header: |
+    {{ if eq .Version "0.10.0" }}
+    ## Coordinated upgrade required
+
+    v0.10.0 changes the runner identity contract and SQL accounting schema.
+    Stop submissions/cron dispatch, drain workers and queued assignments, stop
+    all writers and verify database, queue and receipt backups before upgrading.
+    Apply Postgres/SQLite migration 23 or MySQL migration 24, then deploy matching
+    protocol-1 planes, runners and custom integrations before restoring traffic.
+    Missing original-record proof has no compatibility fallback. Automatic
+    downgrade is refused; rollback needs a reviewed backup and reconciliation.
+
+    Preserve/reconcile legacy unbound accounting, bare terminal-hook claims and
+    ambiguous same-ID receipts. Use fresh IDs for intentional new work. Managed
+    connector operations need fresh policy evaluation/review; app-owned approvals
+    already returned are not revoked and must be reconciled by their owner.
+    Kafka requires explicit `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true` to accept
+    its weaker mode, even with Redis.
+
+    Follow the [complete upgrade sequence](https://github.com/getrunkite/runkite/blob/v0.10.0/docs/internal/release-candidate-v0100.md#upgrade-sequence)
+    and [operator runbook](https://github.com/getrunkite/runkite/blob/v0.10.0/docs/ops-runbook.md#assignment-identity-upgrade).
+
+    {{ end }}
     ## Downloads
 
     | Platform | Archive |

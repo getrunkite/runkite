@@ -362,6 +362,9 @@ func (s *Store) migrations(conn *pgxpool.Conn) []migrate.Migration {
 		{Version: 22, Name: "durable_run_usage", Up: func(ctx context.Context) error { return s.upRunUsage(ctx, conn) }, Down: func(context.Context) error {
 			return fmt.Errorf("durable usage cannot be downgraded safely; restore a reviewed backup and reconcile recorded usage")
 		}},
+		{Version: 23, Name: "run_finalization_identity", Up: func(ctx context.Context) error { return s.upRunFinalization(ctx, conn) }, Down: func(context.Context) error {
+			return fmt.Errorf("record-bound accounting cannot be downgraded safely; restore a reviewed backup and reconcile usage")
+		}},
 	}
 }
 
@@ -1891,7 +1894,7 @@ func (s *Store) ListActiveRunsCreatedBefore(ctx context.Context, before time.Tim
 	if limit <= 0 {
 		limit = 100
 	}
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE status IN ('pending','running') AND created_at < $1`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs WHERE status IN ('pending','running') AND created_at < $1`
 	args := []interface{}{before.UTC()}
 	argN := 2
 	if !tenant.IsSystem(ctx) {
@@ -1912,7 +1915,7 @@ func (s *Store) ListActiveRunsCreatedBefore(ctx context.Context, before time.Tim
 	for rows.Next() {
 		var r models.Run
 		var metaBytes, inputBytes, configBytes, outputBytes []byte
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaBytes, &inputBytes, &configBytes, &outputBytes, &r.Error, &r.CreatedAt, &r.UpdatedAt, &r.ParentRunID, &r.RootRunID, &r.Depth, &r.IncarnationID); err != nil {
 			return nil, err
 		}
 		if metaBytes != nil {

@@ -247,7 +247,15 @@ async def test_stream_events_preserves_utf8_under_the_grpc_receive_limit():
 
             return asyncio.ensure_future(drain())
 
-    stub = CaptureStub({"run_id": "unicode-run", "thread_id": "thread", "graph_id": "graph", "generation": 1})
+    stub = CaptureStub(
+        {
+            "run_id": "unicode-run",
+            "thread_id": "thread",
+            "graph_id": "graph",
+            "generation": 1,
+            "run_incarnation_id": "record-fixture",
+        }
+    )
     await _run_one_iteration(stub, UnicodeAdapter())
     check("Unicode job confirms its native event stream and completes", stub.reported_status == "success")
     wire_event = runner_pb2.RunEventProto.FromString(stub.wire_events[0])
@@ -258,7 +266,7 @@ async def test_stream_events_preserves_utf8_under_the_grpc_receive_limit():
 
 
 async def test_poll_loop_dispatches_and_reports_success():
-    assignment = {"run_id": "r1", "thread_id": "t1", "graph_id": "g1"}
+    assignment = {"run_id": "r1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"}
     stub = _FakeStub(assignment)
     await _run_one_iteration(stub, _SucceedingAdapter())
 
@@ -268,7 +276,7 @@ async def test_poll_loop_dispatches_and_reports_success():
 
 
 async def test_poll_loop_reports_error_when_adapter_raises():
-    assignment = {"run_id": "r2", "thread_id": "t1", "graph_id": "g1"}
+    assignment = {"run_id": "r2", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"}
     stub = _FakeStub(assignment)
     await _run_one_iteration(stub, _RaisingAdapter())
 
@@ -314,6 +322,7 @@ async def test_poll_loop_rejects_checkpoint_ref_for_adapters():
         "thread_id": "t1",
         "graph_id": "g1",
         "checkpoint_ref": "past-cp-42",
+        "run_incarnation_id": "record-fixture",
     }
     stub = _FakeStub(assignment)
     await _run_one_iteration(stub, TrackingAdapter())
@@ -333,8 +342,8 @@ async def test_poll_loop_runs_jobs_concurrently_at_concurrency_2():
     is about: with concurrency=2, two dispatched jobs must overlap in
     the adapter, not run one-after-the-other."""
     assignments = [
-        {"run_id": "c1", "thread_id": "t1", "graph_id": "g1"},
-        {"run_id": "c2", "thread_id": "t1", "graph_id": "g1"},
+        {"run_id": "c1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
+        {"run_id": "c2", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
     ]
     stub = _MultiJobFakeStub(assignments)
     adapter = _ConcurrencyTrackingAdapter()
@@ -385,8 +394,8 @@ async def test_poll_loop_concurrency_1_is_sequential_by_default():
     exact original one-job-at-a-time behavior -- max_concurrent must
     never exceed 1 even though _handle_job now runs as a spawned Task."""
     assignments = [
-        {"run_id": "s1", "thread_id": "t1", "graph_id": "g1"},
-        {"run_id": "s2", "thread_id": "t1", "graph_id": "g1"},
+        {"run_id": "s1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
+        {"run_id": "s2", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
     ]
     stub = _MultiJobFakeStub(assignments)
     adapter = _ConcurrencyTrackingAdapter()
@@ -439,8 +448,8 @@ async def test_cancel_isolation_under_concurrency():
     already hold, but concurrency is exactly the scenario that would
     expose a mix-up if it didn't."""
     assignments = [
-        {"run_id": "iso1", "thread_id": "t1", "graph_id": "g1"},
-        {"run_id": "iso2", "thread_id": "t1", "graph_id": "g1"},
+        {"run_id": "iso1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
+        {"run_id": "iso2", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"},
     ]
     stub = _MultiJobFakeStub(assignments)
     adapter = _ConcurrencyTrackingAdapter()
@@ -468,7 +477,7 @@ async def test_cancel_isolation_under_concurrency():
 
     # Cancel iso1 only -- via pending_cancels directly, same as
     # watch_cancels would do on a real WatchCancels signal.
-    await record_cancel_signal(pending_cancels, pre_cancelled, lock, "iso1")
+    await record_cancel_signal(pending_cancels, pre_cancelled, lock, "iso1", run_incarnation_id="record-fixture")
 
     for _ in range(500):
         if len(stub.reported_status) == 2:
@@ -491,7 +500,7 @@ async def test_shutdown_drains_in_flight_jobs_independent_of_dispatcher_cancella
     -- cancelling the DISPATCHER (what run_worker's finally block does
     first) must NOT cancel an already-spawned job task. Draining
     `in_flight` afterward must let it finish naturally."""
-    assignments = [{"run_id": "d1", "thread_id": "t1", "graph_id": "g1"}]
+    assignments = [{"run_id": "d1", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"}]
     stub = _MultiJobFakeStub(assignments)
     adapter = _ConcurrencyTrackingAdapter()
     pending_cancels: dict = {}
@@ -547,7 +556,9 @@ async def test_stream_events_setup_failure_still_reports_status():
         def StreamEvents(self, event_generator, metadata=None):
             raise RuntimeError("stream setup failed")
 
-    stub = _StreamFailsStub({"run_id": "r-stream-fail", "thread_id": "t1", "graph_id": "g1"})
+    stub = _StreamFailsStub(
+        {"run_id": "r-stream-fail", "thread_id": "t1", "graph_id": "g1", "run_incarnation_id": "record-fixture"}
+    )
     pending_cancels: dict = {}
     pre_cancelled: set = set()
     lock = asyncio.Lock()
@@ -606,14 +617,14 @@ async def test_register_run_observes_pre_arrived_cancel():
     pending: dict = {}
     pre: set = set()
     lock = asyncio.Lock()
-    pre.add("early-run")
-    ev = await register_run(pending, pre, lock, "early-run")
+    pre.add(("early-run", "record-fixture"))
+    ev = await register_run(pending, pre, lock, "early-run", run_incarnation_id="record-fixture")
     check("pre-arrived cancel leaves Event already set", ev.is_set())
-    check("pre_cancelled entry stays latched for replacement attempts", "early-run" in pre)
+    check("pre_cancelled entry stays latched for replacement attempts", ("early-run", "record-fixture") in pre)
 
     pending2: dict = {}
     pre2: set = set()
-    ev2 = await register_run(pending2, pre2, lock, "normal-run")
+    ev2 = await register_run(pending2, pre2, lock, "normal-run", run_incarnation_id="record-fixture")
     check("normal register returns unset Event", not ev2.is_set())
 
 

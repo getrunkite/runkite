@@ -31,7 +31,7 @@ func TestConnectorActionEventFailureRollsBackApprovalAndSummary(t *testing.T) {
 	if err := s.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.BeginRunAttempt(ctx, "run", 1); err != nil {
+	if _, err := s.BeginRunAttempt(ctx, "run", originalRunIdentity(t, s, "run"), 1); err != nil {
 		t.Fatal(err)
 	}
 	revision := testPendingTargetRevision

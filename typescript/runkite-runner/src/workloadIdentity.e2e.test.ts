@@ -21,6 +21,111 @@ const execute = promisify(execFile);
 const uri = "spiffe://fixture.test/runner/typescript";
 type ProcessHandle = { child: ChildProcess; log: () => string; stop: () => Promise<void> };
 
+function packedArtifact(stdout: string, name: string, version: string): { filename: string; integrity: string } {
+  let metadata: unknown;
+  try {
+    metadata = JSON.parse(stdout);
+  } catch {
+    assert.fail("npm pack returned malformed JSON");
+  }
+  let record: unknown;
+  if (Array.isArray(metadata) && metadata.length === 1) record = metadata[0];
+  else if (
+    metadata !== null &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    Object.keys(metadata).length === 1 &&
+    Object.keys(metadata)[0] === name
+  ) {
+    record = (metadata as Record<string, unknown>)[name];
+  }
+  assert.ok(
+    record !== null && typeof record === "object" && !Array.isArray(record),
+    "npm pack metadata differs from project",
+  );
+  const fields = record as Record<string, unknown>;
+  assert.equal(fields.name, name, "npm pack package name differs from project");
+  assert.equal(fields.version, version, "npm pack package version differs from project");
+  const filename = fields.filename;
+  assert.ok(
+    typeof filename === "string" &&
+      filename.length > 0 &&
+      filename !== "." &&
+      filename !== ".." &&
+      path.basename(filename) === filename &&
+      !filename.includes("\\") &&
+      Array.from(filename).every((character) => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127) &&
+      filename.endsWith(".tgz"),
+    "npm pack returned an invalid artifact filename",
+  );
+  assert.ok(typeof fields.integrity === "string" && fields.integrity.length > 0, "npm pack returned no integrity");
+  return { filename, integrity: fields.integrity };
+}
+
+test("npm pack metadata accepts legacy and keyed single-package results", () => {
+  const record = {
+    name: "runkite-runner",
+    version: "0.10.0",
+    filename: "runkite-runner-0.10.0.tgz",
+    integrity: "sha512-fixture",
+  };
+  for (const metadata of [[record], { [record.name]: record }]) {
+    assert.deepEqual(packedArtifact(JSON.stringify(metadata), record.name, record.version), {
+      filename: record.filename,
+      integrity: record.integrity,
+    });
+  }
+});
+
+test("npm pack metadata rejects ambiguous, malformed and mismatched results", () => {
+  const record = {
+    name: "runkite-runner",
+    version: "0.10.0",
+    filename: "runkite-runner-0.10.0.tgz",
+    integrity: "sha512-fixture",
+  };
+  for (const metadata of [
+    [],
+    [record, record],
+    {},
+    null,
+    "unexpected",
+    [null],
+    { other: record },
+    { [record.name]: record, other: record },
+    { [record.name]: [] },
+    [{ ...record, name: "other" }],
+    { [record.name]: { ...record, version: "0.9.0" } },
+    [{ ...record, integrity: "" }],
+    [{ ...record, integrity: 1 }],
+  ]) {
+    assert.throws(() => packedArtifact(JSON.stringify(metadata), record.name, record.version), /npm pack/);
+  }
+  assert.throws(() => packedArtifact("{", record.name, record.version), /npm pack/);
+});
+
+test("npm pack metadata rejects unsafe archive filenames in both formats", () => {
+  for (const filename of [
+    "../package.tgz",
+    "/tmp/package.tgz",
+    "dir/package.tgz",
+    "dir\\package.tgz",
+    "",
+    ".",
+    "..",
+    null,
+    42,
+    "bad\nname.tgz",
+    "bad\x7fname.tgz",
+    "package.zip",
+  ]) {
+    const record = { name: "runkite-runner", version: "0.10.0", filename, integrity: "sha512-fixture" };
+    for (const metadata of [[record], { [record.name]: record }]) {
+      assert.throws(() => packedArtifact(JSON.stringify(metadata), record.name, record.version), /artifact filename/);
+    }
+  }
+});
+
 function launch(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv): ProcessHandle {
   const child = spawn(command, args, { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
   let output = "";
@@ -229,12 +334,9 @@ test(
         runnerDirectory,
         npmEnvironment,
       );
-      const metadata = JSON.parse(packed.stdout);
-      assert.equal(metadata.length, 1);
-      assert.equal(metadata[0].name, expectedPackage.name);
-      assert.equal(metadata[0].version, expectedPackage.version);
-      archive = path.join(directory, metadata[0].filename);
-      packedIntegrity = metadata[0].integrity;
+      const metadata = packedArtifact(packed.stdout, expectedPackage.name, expectedPackage.version);
+      archive = path.join(directory, metadata.filename);
+      packedIntegrity = metadata.integrity;
     }
     const integrity =
       "sha512-" +
@@ -280,10 +382,11 @@ test(
       `
 import { appendFileSync, existsSync } from 'node:fs';
 import { MockLanguageModelV4 } from 'ai/test';
+import { runnerHeaders } from 'runkite-runner/dist/tenantCtx.js';
 export function agent(context) {
  return { maxRetries: 0, model: new MockLanguageModelV4({ modelId: 'offline-strict-mtls', doStream: async ({ prompt }) => ({ stream: new ReadableStream({ async start(controller) {
   const users = prompt.filter(message => message.role === 'user').length;
-  appendFileSync(process.env.E2E_CALLS_FILE, JSON.stringify({runId:context.runId,users}) + '\\n');
+  appendFileSync(process.env.E2E_CALLS_FILE, JSON.stringify({runId:context.runId,users,runIncarnationId:runnerHeaders()['X-Runkite-Run-Incarnation']}) + '\\n');
   controller.enqueue({type:'stream-start',warnings:[]});
   controller.enqueue({type:'text-start',id:'text'});
   controller.enqueue({type:'text-delta',id:'text',delta:'Strict mTLS history ' + users});
@@ -429,7 +532,14 @@ export function agent(context) {
     assert.equal(owner.uri, uri);
     assert.match(owner.key_sha256, /^[0-9a-f]{64}$/);
     assert.equal(current.metadata._runkite_attempt_generation, 1);
+    const runIncarnationId = (await readFile(calls, "utf8"))
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line))
+      .find((call) => call.runId === run)?.runIncarnationId;
+    assert.match(runIncarnationId, /^[\x21-\x7e]{1,256}$/);
     const runnerHeaders = {
+      "X-Runkite-Run-Incarnation": runIncarnationId,
       "X-Runner-Kind": "typescript-ai-sdk",
       "X-Runner-Token": runnerToken,
       "X-Runkite-Run-Id": run,
@@ -449,8 +559,8 @@ export function agent(context) {
     metadataHeader.set("runner-kind", "typescript-ai-sdk");
     metadataHeader.set("runner-token", runnerToken);
     for (const [method, body] of [
-      ["heartbeat", { runId: run, generation: "1" }],
-      ["reportStatus", { runId: run, generation: "1", status: "success", errorMessage: "" }],
+      ["heartbeat", { runId: run, runIncarnationId, generation: "1" }],
+      ["reportStatus", { runId: run, runIncarnationId, generation: "1", status: "success", errorMessage: "" }],
     ] as const) {
       const error = await new Promise<any>((resolve) =>
         (peer as any)[method](body, metadataHeader, { deadline: Date.now() + 5000 }, (caught: unknown) =>

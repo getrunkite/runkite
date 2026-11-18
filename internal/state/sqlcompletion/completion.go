@@ -89,7 +89,10 @@ func (d Driver) load(ctx context.Context, tx Tx, runID string) (string, string, 
 	}
 	return tid, threadID, st, meta, nil
 }
-func (d Driver) BeginRunAttempt(ctx context.Context, runID string, generation int64) (bool, error) {
+func (d Driver) BeginRunAttempt(ctx context.Context, runID, incarnation string, generation int64) (bool, error) {
+	if incarnation == "" {
+		return false, &state.ErrConflict{Resource: "run", ID: runID, Reason: "original record identity required"}
+	}
 	tx, err := d.Begin(ctx)
 	if err != nil {
 		return false, err
@@ -98,6 +101,13 @@ func (d Driver) BeginRunAttempt(ctx context.Context, runID string, generation in
 	tid, _, st, meta, err := d.load(ctx, tx, runID)
 	if err != nil {
 		return false, err
+	}
+	var currentIdentity string
+	if err := tx.Row(ctx, d.query(`SELECT incarnation_id FROM runs WHERE run_id=? AND tenant_id=?`), runID, tid).Scan(&currentIdentity); err != nil {
+		return false, err
+	}
+	if currentIdentity != incarnation {
+		return false, nil
 	}
 	if state.TerminalRunStatus(st) || state.MetadataGeneration(meta, state.AttemptGenerationKey) > generation {
 		return false, nil

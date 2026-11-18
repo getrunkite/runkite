@@ -46,8 +46,7 @@ func (s *timeoutSnapshotBarrierStore) ListActiveRunsCreatedBefore(ctx context.Co
 }
 
 func TestConcurrentTimeoutSweepsCountAndMeterOneWinner(t *testing.T) {
-	store, q, b, c := completionFixture(t)
-	ageTimeoutRun(t, store)
+	store, q, b, c := completionFixtureAt(t, time.Now().UTC().Add(-2*time.Hour))
 	barrier := &timeoutSnapshotBarrierStore{SQLiteStore: store, ready: make(chan struct{})}
 	first := api.NewServer(barrier, q, b, c)
 	second := api.NewServer(barrier, q, b, c)
@@ -97,18 +96,17 @@ func TestTimeoutFencesReclaimAndPreservesTerminalWinner(t *testing.T) {
 			name = "terminal_winner"
 		}
 		t.Run(name, func(t *testing.T) {
-			store, q, b, c := completionFixture(t)
-			ageTimeoutRun(t, store)
+			store, q, b, c := completionFixtureAt(t, time.Now().UTC().Add(-2*time.Hour))
 			fault := &pausedCancelCommitStore{SQLiteStore: store, ready: make(chan struct{}), resume: make(chan struct{})}
 			plane := api.NewServer(fault, q, b, c)
 			rpc := bridge.NewServer(q, b, c, nil)
 			rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			if job, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1}); err != nil || !job.HasJob {
+			if job, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1}); err != nil || !job.HasJob {
 				t.Fatal(job, err)
 			}
-			publishReviewEvent(t, b, 1, 1, "values", `{"answer":"unfinished","usage":{"prompt_tokens":999}}`)
+			publishReviewEvent(t, store, b, 1, 1, "values", `{"answer":"unfinished","usage":{"prompt_tokens":999}}`)
 			type result struct {
 				count int
 				err   error
@@ -124,11 +122,11 @@ func TestTimeoutFencesReclaimAndPreservesTerminalWinner(t *testing.T) {
 				t.Fatal("timeout did not capture its current attempt")
 			}
 			if terminalWinner {
-				if result, err := store.CompleteRun(ctx, &state.RunCompletion{RunID: "run", Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "winner"}}); err != nil || !result.Applied {
+				if result, err := store.CompleteRun(ctx, withOriginalCompletion(t, store, &state.RunCompletion{RunID: "run", Generation: 1, Status: models.RunStatusSuccess, Values: map[string]interface{}{"answer": "winner"}})); err != nil || !result.Applied {
 					close(fault.resume)
 					t.Fatal(result, err)
 				}
-			} else if ok, err := store.BeginRunAttempt(ctx, "run", 2); err != nil || !ok {
+			} else if ok, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 2); err != nil || !ok {
 				close(fault.resume)
 				t.Fatal(ok, err)
 			}
@@ -159,24 +157,8 @@ func TestTimeoutFencesReclaimAndPreservesTerminalWinner(t *testing.T) {
 	}
 }
 
-func ageTimeoutRun(t *testing.T, store *sqlite.SQLiteStore) {
-	t.Helper()
-	ctx := context.Background()
-	if err := store.DeleteRun(ctx, "run"); err != nil {
-		t.Fatal(err)
-	}
-	old := time.Now().UTC().Add(-2 * time.Hour)
-	if err := store.CreateRun(ctx, &models.Run{
-		RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending,
-		Metadata: map[string]interface{}{}, CreatedAt: old, UpdatedAt: old,
-	}); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestTimeoutCompletesAndReleasesThreadAtomically(t *testing.T) {
-	store, q, b, c := completionFixture(t)
-	ageTimeoutRun(t, store)
+	store, q, b, c := completionFixtureAt(t, time.Now().UTC().Add(-2*time.Hour))
 	plane := api.NewServer(unavailableTimeoutReleaseStore{store}, q, b, c)
 	ctx := context.Background()
 	n, err := plane.TimeoutOverdueRuns(ctx, time.Hour, 100)
@@ -199,8 +181,7 @@ func TestTimeoutCompletesAndReleasesThreadAtomically(t *testing.T) {
 func TestTimeoutFinalizationFailureRetainsLeaseAndSignalsRunner(t *testing.T) {
 	for _, stage := range []string{"usage", "hold"} {
 		t.Run(stage, func(t *testing.T) {
-			store, q, b, c := completionFixture(t)
-			ageTimeoutRun(t, store)
+			store, q, b, c := completionFixtureAt(t, time.Now().UTC().Add(-2*time.Hour))
 			fault := &cancelFinalizationFaultStore{SQLiteStore: store, stage: stage}
 			fault.fail.Store(true)
 			plane := api.NewServer(fault, q, b, c)
@@ -208,21 +189,21 @@ func TestTimeoutFinalizationFailureRetainsLeaseAndSignalsRunner(t *testing.T) {
 			rpc.SetRunLifecycle(plane.BeginRunAttempt, plane.CompleteRun)
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			job, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+			job, err := rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 			if err != nil || !job.HasJob {
 				t.Fatal(job, err)
 			}
-			cancelled, err := c.SubscribeCancel(ctx, "run")
+			cancelled, err := c.SubscribeCancel(ctx, "run", originalRunIdentity(t, store, "run"))
 			if err != nil {
 				t.Fatal(err)
 			}
 			now := time.Now().UTC()
-			if err := store.UpsertUsageHold(ctx, &models.UsageHold{
+			if err := store.UpsertRunUsageHold(ctx, originalRunIdentity(t, store, "run"), &models.UsageHold{
 				RunID: "run", TenantID: "default", AgentID: "agent", TokensHold: 7, CreatedAt: now,
 			}); err != nil {
 				t.Fatal(err)
 			}
-			publishReviewEvent(t, b, 1, 1, "values", `{"answer":"unfinished","usage":{"prompt_tokens":5,"completion_tokens":2}}`)
+			publishReviewEvent(t, store, b, 1, 1, "values", `{"answer":"unfinished","usage":{"prompt_tokens":5,"completion_tokens":2}}`)
 			n, timeoutErr := plane.TimeoutOverdueRuns(ctx, time.Hour, 100)
 			run, err := store.GetRun(ctx, "run")
 			if err != nil || run.Status != models.RunStatusTimeout {
@@ -241,7 +222,7 @@ func TestTimeoutFinalizationFailureRetainsLeaseAndSignalsRunner(t *testing.T) {
 			if n, dead, err := q.ReclaimStale(ctx, -time.Second, 3); err != nil || n != 1 || len(dead) != 0 {
 				t.Fatal(n, dead, err)
 			}
-			job, err = rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1})
+			job, err = rpc.GetJob(ctx, &pb.GetJobRequest{RunnerKind: "kind", TimeoutSeconds: 1, AssignmentIdentityVersion: 1})
 			if err != nil || job.HasJob {
 				t.Fatalf("timed-out agent was redispatched: job=%+v err=%v", job, err)
 			}

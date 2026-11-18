@@ -104,19 +104,19 @@ func newActionAPIEnvAtPath(t *testing.T, path, mode, authority string) *actionAP
 	if err := db.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{"run_manifest": manifest}, CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	if ok, err := db.BeginRunAttempt(ctx, "run", 2); err != nil || !ok {
+	if ok, err := db.BeginRunAttempt(ctx, "run", originalRunIdentity(t, db, "run"), 2); err != nil || !ok {
 		t.Fatalf("begin attempt: accepted=%v error=%v", ok, err)
 	}
 	store := &actionFailureStore{SQLiteStore: db}
 	queue := inprocess.NewQueue()
-	assignment := &transport.RunAssignment{RunID: "run", ThreadID: "thread", GraphID: "agent", TenantID: "acme", RunnerKind: "python-langgraph", Generation: 2, User: &transport.UserContext{Identity: "alice"}}
+	assignment := &transport.RunAssignment{RunID: "run", ThreadID: "thread", GraphID: "agent", TenantID: "acme", RunnerKind: "python-langgraph", Generation: 2, User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, "run")}
 	if err := queue.Enqueue(ctx, assignment); err != nil {
 		t.Fatal(err)
 	}
 	if live, err := queue.Dequeue(ctx, assignment.RunnerKind, time.Second); err != nil || live == nil {
 		t.Fatalf("dequeue attempt: %v", err)
 	}
-	binding := &auth.RunBinding{RunID: "run", ThreadID: "thread", AgentID: "agent", TenantID: "acme", Generation: 2, User: assignment.User}
+	binding := &auth.RunBinding{RunID: "run", ThreadID: "thread", AgentID: "agent", TenantID: "acme", Generation: 2, User: assignment.User, RunIncarnationID: originalRunIdentity(t, store, "run")}
 	env := &actionAPIEnv{store: store, queue: queue, ctx: auth.WithRunBinding(ctx, binding), binding: binding}
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var request struct {
@@ -326,7 +326,9 @@ func TestRecordedConnectorActionSeparatesLocalDenialsAndProtocolObservations(t *
 				c, _ := env.s.connectors.Get("fixture")
 				c.Config.Auth = connector.AuthConfig{Type: "oauth2_client_credentials"}
 			case "expired_assignment":
-				if _, err := env.queue.Ack(env.ctx, "run", 2); err != nil {
+				if _, err := env.queue.Ack(env.ctx, "run", originalRunIdentity(t, env.store,
+
+					"run"), 2); err != nil {
 					t.Fatal(err)
 				}
 			case "mismatched_response":
@@ -406,11 +408,13 @@ func TestRecordedConnectorActionsRetryOnlyObservationPersistence(t *testing.T) {
 func TestRecordedConnectorActionOriginalReceiptSurvivesReclaim(t *testing.T) {
 	env := newActionAPIEnv(t, "json", "policy")
 	env.setTool(func(w http.ResponseWriter, r *http.Request, id json.RawMessage) {
-		if ok, err := env.store.BeginRunAttempt(env.ctx, "run", 3); err != nil || !ok {
+		if ok, err := env.store.BeginRunAttempt(env.ctx, "run", originalRunIdentity(t, env.store, "run"), 3); err != nil || !ok {
 			t.Errorf("replace durable attempt: accepted=%v error=%v", ok, err)
 		}
-		_, _ = env.queue.Ack(env.ctx, "run", 2)
-		if err := env.queue.Enqueue(env.ctx, &transport.RunAssignment{RunID: "run", ThreadID: "thread", GraphID: "agent", TenantID: "acme", RunnerKind: "python-langgraph", Generation: 3}); err != nil {
+		_, _ = env.queue.Ack(env.ctx, "run", originalRunIdentity(t, env.store,
+
+			"run"), 2)
+		if err := env.queue.Enqueue(env.ctx, &transport.RunAssignment{RunID: "run", ThreadID: "thread", GraphID: "agent", TenantID: "acme", RunnerKind: "python-langgraph", Generation: 3, RunIncarnationID: originalRunIdentity(t, env.store, "run")}); err != nil {
 			t.Error(err)
 		}
 		if _, err := env.queue.Dequeue(env.ctx, "python-langgraph", time.Second); err != nil {
@@ -469,8 +473,23 @@ func TestManagedApprovalCannotAuthorizeARecreatedRun(t *testing.T) {
 			if err := env.store.CreateRun(env.ctx, &models.Run{RunID: old.RunID, ThreadID: old.ThreadID, AgentID: old.AgentID, Status: models.RunStatusPending, Metadata: old.Metadata, CreatedAt: old.CreatedAt, UpdatedAt: old.UpdatedAt}); err != nil {
 				t.Fatal(err)
 			}
-			if accepted, err := env.store.BeginRunAttempt(env.ctx, "run", 2); err != nil || !accepted {
+			if accepted, err := env.store.BeginRunAttempt(env.ctx, "run", originalRunIdentity(t, env.store, "run"), 2); err != nil || !accepted {
 				t.Fatalf("start replacement attempt: accepted=%v error=%v", accepted, err)
+			}
+			live, err := env.queue.LookupInflight(env.ctx, "run")
+			if err != nil || live == nil {
+				t.Fatal("original fixture assignment unavailable", live, err)
+			}
+			if accepted, err := env.queue.Ack(env.ctx, live.RunID, live.RunIncarnationID, live.Generation); err != nil || !accepted {
+				t.Fatal("replace original fixture assignment", accepted, err)
+			}
+			env.binding.RunIncarnationID = originalRunIdentity(t, env.store, "run")
+			live.RunIncarnationID = env.binding.RunIncarnationID
+			if err := env.queue.Enqueue(env.ctx, live); err != nil {
+				t.Fatal(err)
+			}
+			if next, err := env.queue.Dequeue(env.ctx, live.RunnerKind, time.Second); err != nil || next == nil {
+				t.Fatal("replacement fixture assignment unavailable", next, err)
 			}
 			r := httptest.NewRequest(http.MethodPost, "/internal/connectors/fixture/mcp", strings.NewReader(recordedToolCall)).WithContext(env.ctx)
 			r.SetPathValue("name", "fixture")

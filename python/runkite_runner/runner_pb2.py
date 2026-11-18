@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0crunner.proto\x12\x11runkite.runner.v0\"=\n\rGetJobRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\x12\x17\n\x0ftimeout_seconds\x18\x02 \x01(\x05\":\n\x0eGetJobResponse\x12\x0f\n\x07has_job\x18\x01 \x01(\x08\x12\x17\n\x0f\x61ssignment_json\x18\x02 \x01(\t\"G\n\rRunEventProto\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x12\n\nevent_json\x18\x02 \x01(\t\x12\x12\n\ngeneration\x18\x03 \x01(\x03\"\"\n\x14StreamEventsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"`\n\x13ReportStatusRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x15\n\rerror_message\x18\x03 \x01(\t\x12\x12\n\ngeneration\x18\x04 \x01(\x03\"6\n\x14ReportStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x12\n\nsuperseded\x18\x02 \x01(\x08\"*\n\x13WatchCancelsRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\"\x1e\n\x0c\x43\x61ncelSignal\x12\x0e\n\x06run_id\x18\x01 \x01(\t\"6\n\x10HeartbeatRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x12\n\ngeneration\x18\x02 \x01(\x03\"3\n\x11HeartbeatResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x12\n\nsuperseded\x18\x02 \x01(\x08\x32\xcf\x03\n\rRunnerService\x12M\n\x06GetJob\x12 .runkite.runner.v0.GetJobRequest\x1a!.runkite.runner.v0.GetJobResponse\x12[\n\x0cStreamEvents\x12 .runkite.runner.v0.RunEventProto\x1a\'.runkite.runner.v0.StreamEventsResponse(\x01\x12_\n\x0cReportStatus\x12&.runkite.runner.v0.ReportStatusRequest\x1a\'.runkite.runner.v0.ReportStatusResponse\x12Y\n\x0cWatchCancels\x12&.runkite.runner.v0.WatchCancelsRequest\x1a\x1f.runkite.runner.v0.CancelSignal0\x01\x12V\n\tHeartbeat\x12#.runkite.runner.v0.HeartbeatRequest\x1a$.runkite.runner.v0.HeartbeatResponseB8Z6github.com/getrunkite/runkite/internal/bridge/runnerpbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x0crunner.proto\x12\x11runkite.runner.v0\"b\n\rGetJobRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\x12\x17\n\x0ftimeout_seconds\x18\x02 \x01(\x05\x12#\n\x1b\x61ssignment_identity_version\x18\x03 \x01(\r\":\n\x0eGetJobResponse\x12\x0f\n\x07has_job\x18\x01 \x01(\x08\x12\x17\n\x0f\x61ssignment_json\x18\x02 \x01(\t\"c\n\rRunEventProto\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x12\n\nevent_json\x18\x02 \x01(\t\x12\x12\n\ngeneration\x18\x03 \x01(\x03\x12\x1a\n\x12run_incarnation_id\x18\x04 \x01(\t\"\"\n\x14StreamEventsResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\"|\n\x13ReportStatusRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x0e\n\x06status\x18\x02 \x01(\t\x12\x15\n\rerror_message\x18\x03 \x01(\t\x12\x12\n\ngeneration\x18\x04 \x01(\x03\x12\x1a\n\x12run_incarnation_id\x18\x05 \x01(\t\"6\n\x14ReportStatusResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x12\n\nsuperseded\x18\x02 \x01(\x08\"O\n\x13WatchCancelsRequest\x12\x13\n\x0brunner_kind\x18\x01 \x01(\t\x12#\n\x1b\x61ssignment_identity_version\x18\x02 \x01(\r\":\n\x0c\x43\x61ncelSignal\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x1a\n\x12run_incarnation_id\x18\x02 \x01(\t\"R\n\x10HeartbeatRequest\x12\x0e\n\x06run_id\x18\x01 \x01(\t\x12\x12\n\ngeneration\x18\x02 \x01(\x03\x12\x1a\n\x12run_incarnation_id\x18\x03 \x01(\t\"3\n\x11HeartbeatResponse\x12\n\n\x02ok\x18\x01 \x01(\x08\x12\x12\n\nsuperseded\x18\x02 \x01(\x08\x32\xcf\x03\n\rRunnerService\x12M\n\x06GetJob\x12 .runkite.runner.v0.GetJobRequest\x1a!.runkite.runner.v0.GetJobResponse\x12[\n\x0cStreamEvents\x12 .runkite.runner.v0.RunEventProto\x1a\'.runkite.runner.v0.StreamEventsResponse(\x01\x12_\n\x0cReportStatus\x12&.runkite.runner.v0.ReportStatusRequest\x1a\'.runkite.runner.v0.ReportStatusResponse\x12Y\n\x0cWatchCancels\x12&.runkite.runner.v0.WatchCancelsRequest\x1a\x1f.runkite.runner.v0.CancelSignal0\x01\x12V\n\tHeartbeat\x12#.runkite.runner.v0.HeartbeatRequest\x1a$.runkite.runner.v0.HeartbeatResponseB8Z6github.com/getrunkite/runkite/internal/bridge/runnerpbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,25 +33,25 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z6github.com/getrunkite/runkite/internal/bridge/runnerpb'
   _globals['_GETJOBREQUEST']._serialized_start=35
-  _globals['_GETJOBREQUEST']._serialized_end=96
-  _globals['_GETJOBRESPONSE']._serialized_start=98
-  _globals['_GETJOBRESPONSE']._serialized_end=156
-  _globals['_RUNEVENTPROTO']._serialized_start=158
-  _globals['_RUNEVENTPROTO']._serialized_end=229
-  _globals['_STREAMEVENTSRESPONSE']._serialized_start=231
-  _globals['_STREAMEVENTSRESPONSE']._serialized_end=265
-  _globals['_REPORTSTATUSREQUEST']._serialized_start=267
-  _globals['_REPORTSTATUSREQUEST']._serialized_end=363
-  _globals['_REPORTSTATUSRESPONSE']._serialized_start=365
-  _globals['_REPORTSTATUSRESPONSE']._serialized_end=419
-  _globals['_WATCHCANCELSREQUEST']._serialized_start=421
-  _globals['_WATCHCANCELSREQUEST']._serialized_end=463
-  _globals['_CANCELSIGNAL']._serialized_start=465
-  _globals['_CANCELSIGNAL']._serialized_end=495
-  _globals['_HEARTBEATREQUEST']._serialized_start=497
-  _globals['_HEARTBEATREQUEST']._serialized_end=551
-  _globals['_HEARTBEATRESPONSE']._serialized_start=553
-  _globals['_HEARTBEATRESPONSE']._serialized_end=604
-  _globals['_RUNNERSERVICE']._serialized_start=607
-  _globals['_RUNNERSERVICE']._serialized_end=1070
+  _globals['_GETJOBREQUEST']._serialized_end=133
+  _globals['_GETJOBRESPONSE']._serialized_start=135
+  _globals['_GETJOBRESPONSE']._serialized_end=193
+  _globals['_RUNEVENTPROTO']._serialized_start=195
+  _globals['_RUNEVENTPROTO']._serialized_end=294
+  _globals['_STREAMEVENTSRESPONSE']._serialized_start=296
+  _globals['_STREAMEVENTSRESPONSE']._serialized_end=330
+  _globals['_REPORTSTATUSREQUEST']._serialized_start=332
+  _globals['_REPORTSTATUSREQUEST']._serialized_end=456
+  _globals['_REPORTSTATUSRESPONSE']._serialized_start=458
+  _globals['_REPORTSTATUSRESPONSE']._serialized_end=512
+  _globals['_WATCHCANCELSREQUEST']._serialized_start=514
+  _globals['_WATCHCANCELSREQUEST']._serialized_end=593
+  _globals['_CANCELSIGNAL']._serialized_start=595
+  _globals['_CANCELSIGNAL']._serialized_end=653
+  _globals['_HEARTBEATREQUEST']._serialized_start=655
+  _globals['_HEARTBEATREQUEST']._serialized_end=737
+  _globals['_HEARTBEATRESPONSE']._serialized_start=739
+  _globals['_HEARTBEATRESPONSE']._serialized_end=790
+  _globals['_RUNNERSERVICE']._serialized_start=793
+  _globals['_RUNNERSERVICE']._serialized_end=1256
 # @@protoc_insertion_point(module_scope)

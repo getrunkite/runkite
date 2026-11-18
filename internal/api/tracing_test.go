@@ -61,10 +61,10 @@ func TestRunSpan_StartedOnCreateEndedOnTerminal(t *testing.T) {
 		t.Fatalf("expected 0 exported spans before run completes, got %d", len(exp.GetSpans()))
 	}
 
-	env.broker.Publish(ctx, run.RunID, &transport.RunEvent{
+	env.broker.Publish(ctx, run.RunID, originalRunIdentity(t, env.store, run.RunID), withOriginalRunEvent(originalRunIdentity(t, env.store, run.RunID), &transport.RunEvent{
 		EventID: "evt_1", Seq: 1, Method: "end",
 		Namespace: []string{}, Data: json.RawMessage(`{"status":"success"}`), Ts: time.Now().UnixMilli(),
-	})
+	}))
 	env.apiServer.StatusCallback()(run.RunID, "success", "")
 
 	spans := exp.GetSpans()

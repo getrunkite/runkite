@@ -4,6 +4,35 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+**Prepared candidate: 0.10.0, unpublished.** Published v0.9.0 artifacts keep
+their existing contract. The [candidate checklist](docs/internal/release-candidate-v0100.md)
+separates completed source qualification from pending hosted, artifact and
+publication checks.
+
+### Coordinated upgrade required
+
+- Stop submissions, cron dispatch and affected app-owned continuations; drain
+  workers and queued/inflight assignments, stop all writers and verify restorable
+  database, queue and receipt backups before applying the new schema.
+- Apply Postgres/SQLite migration 23 or MySQL migration 24 with the matching
+  plane, then deploy matching protocol-1 planes, runners and custom integrations
+  before restoring traffic. Missing original-record proof has no fallback.
+  Automatic downgrade is refused; rollback requires a reviewed backup restore
+  and accounting reconciliation.
+- Preserve and reconcile legacy unbound accounting, bare terminal-hook claims
+  and ambiguous same-ID receipts. Never infer their original owner from a
+  current row or delete evidence to force a retry. Use fresh IDs for intentional
+  new operations.
+- Re-evaluate managed connector operations carrying the old policy fingerprint.
+  The update does not revoke app-owned approvals or allows already returned;
+  their owners must discard old execution authority and resubmit saved proposals
+  for fresh evaluation/review. Review exact grant/tool names before resuming.
+- Kafka requires explicit `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true` to accept
+  its weaker Compatible mode. Redis does not add atomic Kafka queue fencing.
+
+Follow the [complete upgrade sequence](docs/internal/release-candidate-v0100.md#upgrade-sequence)
+and preserve the existing tenant, TLS, checkpoint and review prerequisites.
+
 ### Added
 
 - Add optional Admin cron calendar previews using the scheduler's shared pinned
@@ -75,6 +104,44 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ### Fixed
 
+- Correct the governance qualification fixture to capture its in-flight run's
+  original-record proof instead of borrowing from the durable store. Run the
+  binding check without a Postgres prerequisite too, with missing/stale record
+  and generation controls. Production identity fences remain unchanged.
+  Supply the same original-record proof to the embedded ADK tracing fixture's
+  run context and assignment so its content-privacy assertions execute.
+
+- Separate Admin dependency auditing from the full CI suite while preserving
+  `test` as a blocking summary of both jobs. An audit finding no longer prevents
+  backend/SDK/UI tests from executing; it still blocks the summary. Activate the
+  conditionally approved Admin-only picomatch exception after all 53 steps of
+  the full hosted suite pass at `47534f3`. Bind it to exact dependency hashes,
+  the complete reviewed audit report and verified qualification; it expires on
+  November 25 at 00:00 UTC without automatic renewal. Admin accepts only zero
+  findings or that exact case; other npm callers retain their existing
+  high/critical threshold. Five HIGH findings remain visible as accepted risk,
+  not a fixed vulnerability. Current functional and remaining release gates
+  stay blocking.
+
+- Remove the vulnerable picomatch watcher chain from the pinned promptfoo example
+  by mirroring its upstream Nunjucks/Chokidar resolution. Keep the framework pin,
+  audit thresholds and native baseline/scoped qualification unchanged. This
+  does not resolve the separate Admin build-tool advisory.
+
+- Require assignment identity protocol 1 before workers dequeue work. Matching
+  planes and Python/TypeScript runners echo the original record identity on
+  bound HTTP and lifecycle RPCs; missing proof cannot inherit a replacement's
+  authority. Scope events, cancellation and queue fences to the record as well
+  as its attempt. Atomically bind SQL usage events, reservations and terminal-hook
+  claims to the original record. Back up and drain all writers, apply
+  Postgres/SQLite migration 23 or MySQL migration 24, and deploy matching builds.
+  Preserve and explicitly reconcile legacy unbound accounting, hook claims and
+  ambiguous same-ID receipts; intentional new operations need fresh IDs.
+- Refuse Kafka queue startup unless operators explicitly set
+  `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true`. Compatible mode still lacks
+  cross-replica atomic queue fencing, including when Redis supplies events,
+  cancellation and the reclaim leader.
+
 - Retain cron fire claims after admitted, completed or uncertain dispatch
   outcomes. Retry only after a definite precreation rejection or positive atomic
   proof that the original run never started. Preserve ordinary HTTP errors and
@@ -102,6 +169,15 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 - Make MySQL cron fire claims independent of `clientFoundRows`: atomic inserts
   report only duplicate-key conflicts as lost claims, preserving exact tenant,
   schedule and fire-time scope without changing valid DSN options or schema.
+
+- Harden the existing combined isolated-workload HA fixture for RFE #47 with
+  deliberate child environments, shared structured evidence acceptance,
+  bounded local execution/cleanup and read-only worker-cancellation absence
+  observations before the final fixture sweep. Pass OpenShell checker/evidence
+  paths explicitly across the sterile child boundary in the workflow and
+  documented reproduction, with executable command regressions. Historical
+  qualification and independent RFE #52 assessment remain separate; no new
+  production runtime or cleanup reconciler is introduced.
 
 - Reject malformed cron timezone prefixes without a parser panic, stop on zero
   or non-advancing next times, and retain the local not-due anchor for `@every`

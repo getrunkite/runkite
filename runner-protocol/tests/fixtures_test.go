@@ -74,8 +74,21 @@ func requireString(t *testing.T, m map[string]any, key string) string {
 
 func validateAssignment(t *testing.T, assignment map[string]any) {
 	t.Helper()
-	for _, key := range []string{"run_id", "thread_id", "runner_kind", "graph_id"} {
+	for _, key := range []string{"run_id", "thread_id", "runner_kind", "graph_id", "run_incarnation_id"} {
 		requireString(t, assignment, key)
+	}
+	identity := assignment["run_incarnation_id"].(string)
+	if len(identity) > 256 {
+		t.Fatal("run_incarnation_id exceeds the wire limit")
+	}
+	for _, character := range identity {
+		if character < '!' || character > '~' {
+			t.Fatal("run_incarnation_id must contain visible ASCII characters")
+		}
+	}
+	generation, ok := assignment["generation"].(float64)
+	if !ok || generation < 0 || generation != float64(int64(generation)) {
+		t.Fatalf("generation must be a non-negative integer, got %#v", assignment["generation"])
 	}
 	if modes, ok := assignment["stream_modes"]; ok && modes != nil {
 		for i, m := range asSlice(t, modes, "stream_modes") {

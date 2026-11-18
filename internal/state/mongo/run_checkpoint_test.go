@@ -74,7 +74,7 @@ func TestBoundCheckpointRejectsRunChangedAfterSnapshotRead(t *testing.T) {
 				if err := store.CreateRun(ctx, &models.Run{RunID: "run", ThreadID: "thread", AgentID: "agent", Status: models.RunStatusPending, Metadata: map[string]interface{}{}, CreatedAt: now, UpdatedAt: now}); err != nil {
 					t.Fatal(err)
 				}
-				if accepted, err := store.BeginRunAttempt(ctx, "run", 1); err != nil || !accepted {
+				if accepted, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 1); err != nil || !accepted {
 					t.Fatalf("begin first attempt: accepted=%t err=%v", accepted, err)
 				}
 				if _, err := store.PutOpaqueCheckpoint(ctx, "thread", "state", []byte("committed history"), "adapter", nil); err != nil {
@@ -102,7 +102,7 @@ func TestBoundCheckpointRejectsRunChangedAfterSnapshotRead(t *testing.T) {
 				}
 				wantReason := "run_generation_mismatch"
 				if change == "generation" {
-					if accepted, err := store.BeginRunAttempt(ctx, "run", 2); err != nil || !accepted {
+					if accepted, err := store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, store, "run"), 2); err != nil || !accepted {
 						t.Fatalf("begin replacement: accepted=%t err=%v", accepted, err)
 					}
 				} else {

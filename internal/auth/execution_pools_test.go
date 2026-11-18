@@ -51,17 +51,19 @@ func (p poolInflight) LookupInflight(_ context.Context, id string) (*transport.R
 	return p[id], nil
 }
 
+// Status requests retain runner authentication here. The API status handler
+// separately checks the durable original record so terminal reads need no lease.
 func TestPoolHTTPDoesNotExposeUnboundOrForeignData(t *testing.T) {
 	rt, token := poolFixture(t)
-	assignments := poolInflight{"one": {RunID: "one", RunnerKind: "pool-finance", TenantID: "acme", GraphID: "finance", Generation: 1}, "foreign": {RunID: "foreign", RunnerKind: "pool-finance", TenantID: "acme", GraphID: "other", Generation: 1}}
+	assignments := poolInflight{"one": {RunID: "one", RunnerKind: "pool-finance", TenantID: "acme", GraphID: "finance", Generation: 1, RunIncarnationID: "fixture-record"}, "foreign": {RunID: "foreign", RunnerKind: "pool-finance", TenantID: "acme", GraphID: "other", Generation: 1, RunIncarnationID: "fixture-record"}}
 	for _, tc := range []struct {
 		method, path, run string
 		status            int
 	}{
 		{"GET", "/internal/cron", "", 401},
-		{"GET", "/internal/runs/one/status", "", 401},
+		{"GET", "/internal/runs/one/status", "", 200},
 		{"GET", "/internal/runs/one/status", "one", 200},
-		{"GET", "/internal/runs/foreign/status", "one", 403},
+		{"GET", "/internal/runs/foreign/status", "one", 200},
 		{"GET", "/internal/store/items", "foreign", 403},
 		{"GET", "/internal/store/items", "one", 200},
 		{"GET", "/internal/connectors", "one", 403},
@@ -76,7 +78,7 @@ func TestPoolHTTPDoesNotExposeUnboundOrForeignData(t *testing.T) {
 			r.Header.Set(HeaderRunnerToken, token)
 			r.Header.Set(HeaderTenantID, "acme")
 			if tc.run != "" {
-				r.Header.Set(HeaderRunID, tc.run)
+				r.Header.Set(HeaderRunID, withFixtureHeaderProof(t, nil, r.Header, HeaderRunID, tc.run))
 				r.Header.Set(HeaderGeneration, "1")
 			}
 			w := httptest.NewRecorder()
@@ -100,7 +102,7 @@ func TestPoolSchemaRecoveryAllowlistMatchesExactDecodedGraph(t *testing.T) {
 	if err := rt.ConfigureExecutionPools(pools); err != nil {
 		t.Fatal(err)
 	}
-	assignments := poolInflight{"one": {RunID: "one", RunnerKind: "pool-finance", TenantID: "acme", GraphID: "finance", Generation: 1}}
+	assignments := poolInflight{"one": {RunID: "one", RunnerKind: "pool-finance", TenantID: "acme", GraphID: "finance", Generation: 1, RunIncarnationID: "fixture-record"}}
 	for _, tc := range []struct {
 		name, method, path, tenant, run string
 		status                          int
@@ -131,7 +133,7 @@ func TestPoolSchemaRecoveryAllowlistMatchesExactDecodedGraph(t *testing.T) {
 			r.Header.Set(HeaderRunnerToken, token)
 			r.Header.Set(HeaderTenantID, tc.tenant)
 			if tc.run != "" {
-				r.Header.Set(HeaderRunID, tc.run)
+				r.Header.Set(HeaderRunID, withFixtureHeaderProof(t, nil, r.Header, HeaderRunID, tc.run))
 				r.Header.Set(HeaderGeneration, "1")
 			}
 			w := httptest.NewRecorder()

@@ -43,6 +43,7 @@ service RunnerService {
 message GetJobRequest {
   string runner_kind = 1;
   int32 timeout_seconds = 2; // how long to wait for a job
+  uint32 assignment_identity_version = 3; // must be 1 before any job is dequeued
 }
 
 message GetJobResponse {
@@ -55,11 +56,11 @@ message RunEventProto {
   string event_json = 2; // JSON-encoded RunEvent
   // generation is the attempt number this runner was handed in its
   // RunAssignment (see internal/transport/types.go's RunAssignment.Generation
-  // doc comment for the full fencing rationale) -- 0 from an older
-  // runner build that predates fencing, treated the same as "always
-  // matches" for backward compat (see server.go's Heartbeat/ReportStatus
-  // handlers).
+  // doc comment for the full fencing rationale). The runner must echo
+  // this exact value. Zero matches only a generation-zero assignment;
+  // it never bypasses fencing or inherits the current generation.
   int64 generation = 3;
+  string run_incarnation_id = 4; // exact original record identity from the assignment
 }
 
 message StreamEventsResponse {
@@ -71,6 +72,7 @@ message ReportStatusRequest {
   string status = 2; // "success", "error", "interrupted"
   string error_message = 3; // only if status == "error"
   int64 generation = 4; // see RunEventProto.generation
+  string run_incarnation_id = 5;
 }
 
 message ReportStatusResponse {
@@ -86,15 +88,18 @@ message ReportStatusResponse {
 
 message WatchCancelsRequest {
   string runner_kind = 1;
+  uint32 assignment_identity_version = 2; // must be 1
 }
 
 message CancelSignal {
   string run_id = 1;
+  string run_incarnation_id = 2; // cancels every generation of this record only
 }
 
 message HeartbeatRequest {
   string run_id = 1;
   int64 generation = 2; // see RunEventProto.generation
+  string run_incarnation_id = 3;
 }
 
 message HeartbeatResponse {

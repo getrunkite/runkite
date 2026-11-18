@@ -56,7 +56,7 @@ func TestMandatoryHITL_MCPPendingThenApprove(t *testing.T) {
 
 	binding := &auth.RunBinding{
 		RunID: "run-mhitl-1", Generation: 1, TenantID: "acme", AgentID: "sales",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, "run-mhitl-1"),
 	}
 	seedManagedPendingFixture(t, store, binding)
 	callMCP := func() (status int, body []byte) {

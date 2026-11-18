@@ -165,7 +165,7 @@ func TestToolsOnlyExistingSessionUsesCurrentConnectorProfile(t *testing.T) {
 	s := NewServer(nil, inprocess.NewQueue(), inprocess.NewBroker(), inprocess.NewCancelBus())
 	s.SetConnectorRegistry(toolsOnlyRegistry(false))
 	s.SetConnectorSessionStore(connector.NewMemoryConnectorSessionStore(0))
-	binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "agent"}
+	binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "agent", RunIncarnationID: originalRunIdentity(t, s, "synthetic-run")}
 	ctx := auth.WithRunBinding(tenant.WithContext(t.Context(), binding.TenantID), binding)
 	token := toolsOnlyMint(t, s, ctx)
 	resources := `{"jsonrpc":"2.0","id":1,"method":"resources/list"}`
@@ -227,7 +227,7 @@ func TestToolsOnlyInvalidInitializationIsBadRequestBeforeCredentials(t *testing.
 	s := NewServer(nil, nil, nil, nil)
 	s.SetConnectorRegistry(toolsOnlyRegistry(false))
 	s.SetConnectorSessionStore(connector.NewMemoryConnectorSessionStore(0))
-	binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "agent"}
+	binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "agent", RunIncarnationID: originalRunIdentity(t, s, "synthetic-run")}
 	ctx := auth.WithRunBinding(tenant.WithContext(t.Context(), binding.TenantID), binding)
 	token := toolsOnlyMint(t, s, ctx)
 	strict, err := toolsOnlyRegistry(true).Get("fixture")
@@ -263,7 +263,7 @@ func TestToolsOnlyProfileToggleRequiresFreshManagedApproval(t *testing.T) {
 			s.SetPolicyEngine(policy.New(policy.Config{ForceEnable: true, DefaultEffect: policy.EffectAllow,
 				MandatoryHITL: []policy.MandatoryHITLRule{{TenantID: "acme", AgentID: "agent", Connector: "fixture", Tools: []string{"write"}}},
 			}))
-			binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "agent"}
+			binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "agent", RunIncarnationID: originalRunIdentity(t, db, "synthetic-run")}
 			seedManagedPendingFixture(t, db, binding)
 			ctx := auth.WithRunBinding(tenant.WithContext(t.Context(), binding.TenantID), binding)
 			token := toolsOnlyMint(t, s, ctx)

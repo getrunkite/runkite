@@ -56,7 +56,7 @@ func TestHandleProxyMCP_PredicateAmountAllow(t *testing.T) {
 	req.SetPathValue("name", "bank")
 	binding := &auth.RunBinding{
 		RunID: "run-pred-low", Generation: 1, TenantID: "acme", AgentID: "payroll",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, s, "run-pred-low"),
 	}
 	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
 	attachConnectorSession(t, s, binding, "bank", req)
@@ -136,7 +136,7 @@ func TestPolicyPredicate_AmountPending(t *testing.T) {
 	req.SetPathValue("name", "bank")
 	binding := &auth.RunBinding{
 		RunID: runID, Generation: 1, TenantID: tenantID, AgentID: "payroll",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, runID),
 	}
 	seedManagedPendingFixture(t, store, binding)
 	req = req.WithContext(auth.WithRunBinding(tenant.WithContext(req.Context(), binding.TenantID), binding))
@@ -252,7 +252,7 @@ func TestHandleProxyMCP_GrantDenyWinsOverPredicate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/internal/connectors/bank/mcp", strings.NewReader(body))
 	req.SetPathValue("name", "bank")
 	binding := &auth.RunBinding{
-		RunID: "run-pred-deny", Generation: 1, TenantID: "acme", AgentID: "payroll",
+		RunID: "run-pred-deny", Generation: 1, TenantID: "acme", AgentID: "payroll", RunIncarnationID: originalRunIdentity(t, s, "run-pred-deny"),
 	}
 	req = req.WithContext(auth.WithRunBinding(req.Context(), binding))
 	attachConnectorSession(t, s, binding, "bank", req)

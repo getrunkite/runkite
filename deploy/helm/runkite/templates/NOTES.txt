@@ -36,3 +36,11 @@ section or pods will crash-loop on admission.
 MCP Ingress is enabled with upstream-hash-by=$remote_addr. Clients must
 hit the same host for the full session lifetime (see chart README).
 {{- end }}
+
+For Unreleased source images, pin matching plane/runner builds and drain older
+assignments before upgrading all replicas. Assignment identity protocol 1 has no
+missing-proof compatibility fallback. Preserve/reconcile ambiguous same-ID
+legacy receipts. See docs/ops-runbook.md#assignment-identity-upgrade.
+Kafka needs explicit RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES=true for non-atomic
+Compatible mode. Redis supplies separate event/cancel and reclaim-leader
+functions, not cross-replica atomic Kafka queue CAS.

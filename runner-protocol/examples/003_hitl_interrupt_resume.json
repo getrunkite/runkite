@@ -1,32 +1,52 @@
 {
   "_description": "Agent hits an interrupt (human approval gate). First run stops with interrupted status. Second run resumes with the approval response. Tests the full HITL lifecycle.",
   "_test_id": "RP-021",
-
   "run_1_assignment": {
     "run_id": "a1b2c3d4-0003-4000-8000-000000000003",
     "thread_id": "t1t2t3t4-0003-4000-8000-000000000003",
     "runner_kind": "python-langgraph",
     "graph_id": "approval_agent",
-    "input": { "messages": [{ "role": "user", "content": "Send an email to alice@example.com" }] },
-    "config": { "configurable": {} },
-    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read", "write"] },
+    "input": {
+      "messages": [
+        {
+          "role": "user",
+          "content": "Send an email to alice@example.com"
+        }
+      ]
+    },
+    "config": {
+      "configurable": {}
+    },
+    "user": {
+      "identity": "test-user",
+      "is_authenticated": true,
+      "permissions": [
+        "read",
+        "write"
+      ]
+    },
     "checkpoint_ref": null,
     "resume_command": null,
-    "stream_modes": ["values"],
+    "stream_modes": [
+      "values"
+    ],
     "connector_needs": [],
     "trace_context": {
       "traceparent": "00-abcdef1234567890abcdef1234567890-3234567890abcdef-01",
       "tracestate": "",
       "correlation_id": "req-0003a"
-    }
+    },
+    "run_incarnation_id": "fixture-record:a1b2c3d4-0003-4000-8000-000000000003",
+    "generation": 1
   },
-
   "run_1_expected_events": [
     {
       "seq": 1,
       "method": "lifecycle",
       "namespace": [],
-      "data": { "event": "running" }
+      "data": {
+        "event": "running"
+      }
     },
     {
       "seq": 2,
@@ -34,8 +54,14 @@
       "namespace": [],
       "data": {
         "messages": [
-          { "role": "user", "content": "Send an email to alice@example.com" },
-          { "role": "ai", "content": "I'll send an email to alice@example.com. Please approve." }
+          {
+            "role": "user",
+            "content": "Send an email to alice@example.com"
+          },
+          {
+            "role": "ai",
+            "content": "I'll send an email to alice@example.com. Please approve."
+          }
         ]
       }
     },
@@ -43,7 +69,9 @@
       "seq": 3,
       "method": "lifecycle",
       "namespace": [],
-      "data": { "event": "interrupted" }
+      "data": {
+        "event": "interrupted"
+      }
     },
     {
       "seq": 4,
@@ -64,38 +92,55 @@
       "seq": 5,
       "method": "end",
       "namespace": [],
-      "data": { "status": "interrupted" }
+      "data": {
+        "status": "interrupted"
+      }
     }
   ],
-
   "run_2_assignment": {
     "run_id": "a1b2c3d4-0003-4000-8000-000000000004",
     "thread_id": "t1t2t3t4-0003-4000-8000-000000000003",
     "runner_kind": "python-langgraph",
     "graph_id": "approval_agent",
     "input": null,
-    "config": { "configurable": {} },
-    "user": { "identity": "test-user", "is_authenticated": true, "permissions": ["read", "write"] },
+    "config": {
+      "configurable": {}
+    },
+    "user": {
+      "identity": "test-user",
+      "is_authenticated": true,
+      "permissions": [
+        "read",
+        "write"
+      ]
+    },
     "checkpoint_ref": "checkpoint-after-interrupt",
     "resume_command": {
       "interrupt_id": "interrupt-001",
-      "response": { "approved": true }
+      "response": {
+        "approved": true
+      }
     },
-    "stream_modes": ["values"],
+    "stream_modes": [
+      "values"
+    ],
     "connector_needs": [],
     "trace_context": {
       "traceparent": "00-abcdef1234567890abcdef1234567890-4234567890abcdef-01",
       "tracestate": "",
       "correlation_id": "req-0003b"
-    }
+    },
+    "run_incarnation_id": "fixture-record:a1b2c3d4-0003-4000-8000-000000000004",
+    "generation": 1
   },
-
   "run_2_expected_events": [
     {
       "seq": 1,
       "method": "lifecycle",
       "namespace": [],
-      "data": { "event": "running" }
+      "data": {
+        "event": "running"
+      }
     },
     {
       "seq": 2,
@@ -103,9 +148,18 @@
       "namespace": [],
       "data": {
         "messages": [
-          { "role": "user", "content": "Send an email to alice@example.com" },
-          { "role": "ai", "content": "I'll send an email to alice@example.com. Please approve." },
-          { "role": "ai", "content": "Email sent to alice@example.com successfully." }
+          {
+            "role": "user",
+            "content": "Send an email to alice@example.com"
+          },
+          {
+            "role": "ai",
+            "content": "I'll send an email to alice@example.com. Please approve."
+          },
+          {
+            "role": "ai",
+            "content": "Email sent to alice@example.com successfully."
+          }
         ]
       }
     },
@@ -113,7 +167,9 @@
       "seq": 3,
       "method": "end",
       "namespace": [],
-      "data": { "status": "success" }
+      "data": {
+        "status": "success"
+      }
     }
   ]
 }

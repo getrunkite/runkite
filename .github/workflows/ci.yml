@@ -10,6 +10,49 @@ permissions:
 
 jobs:
   test:
+    name: test
+    needs: [test-suite, admin-audit]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require full test suite and Admin audit
+        env:
+          TEST_SUITE_RESULT: ${{ needs.test-suite.result }}
+          ADMIN_AUDIT_RESULT: ${{ needs.admin-audit.result }}
+        run: |
+          if [ "$TEST_SUITE_RESULT" != "success" ] || [ "$ADMIN_AUDIT_RESULT" != "success" ]; then
+            printf 'Required jobs did not both succeed: test-suite=%s admin-audit=%s\n' "$TEST_SUITE_RESULT" "$ADMIN_AUDIT_RESULT"
+            exit 1
+          fi
+
+  admin-audit:
+    name: Admin dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.12"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+
+      - name: Test npm audit policy
+        run: python3 -m unittest discover -s python/tests -p test_npm_audit_policy.py -v
+
+      - name: Audit Admin dependencies
+        working-directory: admin-ui
+        run: |
+          npm install -g npm@10.9.2
+          npm ci
+          # Fail on real high/critical findings; warn-only if the audit
+          # API/registry is down (see scripts/npm-audit-ci.sh).
+          bash ../scripts/npm-audit-ci.sh
+
+  test-suite:
+    name: Full test suite
     runs-on: ubuntu-latest
 
     services:
@@ -127,9 +170,6 @@ jobs:
         run: |
           npm install -g npm@10.9.2
           npm ci
-          # Fail on real high/critical findings; warn-only if the audit
-          # API/registry is down (see scripts/npm-audit-ci.sh).
-          bash ../scripts/npm-audit-ci.sh
           npm run lint
           # Plain node --test with native TS type-stripping (no extra
           # devDependency) -- see src/lib/agentMessages.test.ts.
@@ -251,6 +291,9 @@ jobs:
           python -m unittest discover -s python/tests -p test_isolated_usage.py
           python -m unittest discover -s python/tests -p test_isolated_fixture.py
           python -m unittest discover -s python/tests -p test_runner_image_qualification.py
+          python -m unittest discover -s python/tests -p test_assignment_identity.py
+          python python/tests/test_completion.py
+          python python/tests/test_worker_completion.py
           python python/tests/test_worker_concurrency.py
           python python/tests/test_tool_call_hook.py
           python python/tests/test_a2a.py

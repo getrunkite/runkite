@@ -454,7 +454,11 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
                     with httpx.Client(timeout=20, trust_env=False) as client:
                         upstream = client.request(self.command, test.base + self.path, headers=headers, content=body)
                     if self.command == "PUT" and self.path == state_path and upstream.is_success:
-                        outcome.update(run_id=self.headers.get("X-Runkite-Run-Id"), receipt=json.loads(body))
+                        outcome.update(
+                            run_id=self.headers.get("X-Runkite-Run-Id"),
+                            run_incarnation_id=self.headers.get("X-Runkite-Run-Incarnation"),
+                            receipt=json.loads(body),
+                        )
                         # The real plane has committed, but the actual worker has
                         # not received its PUT acknowledgement or sent terminal status.
                         test.runner.stop(kill=True)
@@ -506,6 +510,8 @@ class ManagedAgentFrameworkE2E(unittest.TestCase):
             self.assertNotIn("error", outcome)
             self.assertEqual(outcome["run_id"], recovered)
             self.assertEqual(outcome["receipt"]["completed"]["run_id"], recovered)
+            self.assertTrue(outcome["run_incarnation_id"])
+            self.assertEqual(outcome["receipt"]["completed"]["run_incarnation_id"], outcome["run_incarnation_id"])
             self.assertNotEqual(self.request(f"/threads/{recovery_thread}/runs/{recovered}")["status"], "success")
             self.start_runner()
             final = self.completed(recovery_thread, recovered)

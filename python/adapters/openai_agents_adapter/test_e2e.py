@@ -161,6 +161,8 @@ class ManagedOpenAIAgentsE2E(_base.ManagedAgentFrameworkE2E):
             self.assertTrue("error" not in outcome, outcome.get("error", ""))
             self.assertEqual(outcome.get("run_id"), unicode_run)
             self.assertEqual(outcome.get("receipt", {}).get("completed", {}).get("run_id"), unicode_run)
+            self.assertTrue(outcome.get("run_incarnation_id"))
+            self.assertEqual(outcome["receipt"]["completed"]["run_incarnation_id"], outcome["run_incarnation_id"])
             self.assertNotEqual(self.request(f"/threads/{unicode_thread}/runs/{unicode_run}")["status"], "success")
             self.start_runner()
             final = self.completed(unicode_thread, unicode_run)

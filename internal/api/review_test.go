@@ -56,7 +56,7 @@ func newReviewFixture(t *testing.T) *reviewFixture {
 	out.handler = auth.MiddlewareWithOpts(provider, nil, nil, auth.MiddlewareOpts{StrictPermissions: true, ReviewSessions: sessions}, s.Handler())
 	for _, scope := range []string{"a", "b"} {
 		ctx := tenant.ScopedContext(t.Context(), scope)
-		binding := &auth.RunBinding{RunID: "run-" + scope, ThreadID: "thread-" + scope, TenantID: scope, AgentID: "agent", Generation: 1}
+		binding := &auth.RunBinding{RunID: "run-" + scope, ThreadID: "thread-" + scope, TenantID: scope, AgentID: "agent", Generation: 1, RunIncarnationID: originalRunIdentity(t, db, "run-"+scope)}
 		seedManagedPendingFixture(t, db, binding)
 		for i := 0; i < 3; i++ {
 			_, digest, args := policy.BindArgs(json.RawMessage(`{"amount":123,"apiKey":"synthetic-credential"}`))
@@ -334,7 +334,7 @@ func TestReviewApprovalRetainsExpiryLegacyAuditAndIncarnationChecks(t *testing.T
 				if err := env.store.CreateRun(ctx, old); err != nil {
 					t.Fatal(err)
 				}
-				if accepted, err := env.store.BeginRunAttempt(ctx, old.RunID, 1); err != nil || !accepted {
+				if accepted, err := env.store.BeginRunAttempt(ctx, old.RunID, originalRunIdentity(t, old, old.RunID), 1); err != nil || !accepted {
 					t.Fatalf("replacement begin: %v %v", accepted, err)
 				}
 			}

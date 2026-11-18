@@ -41,7 +41,8 @@ func TestApprovalQuorumAPIRejectsSelfReviewAcrossAdminAndReview(t *testing.T) {
 	handler := quorumAPIHandler(env)
 	ctx := tenant.ScopedContext(t.Context(), "a")
 	binding := &auth.RunBinding{RunID: uuid.NewString(), ThreadID: uuid.NewString(), AgentID: "agent", TenantID: "a", Generation: 1,
-		User: &transport.UserContext{Identity: "requester", Permissions: []string{"admin"}}}
+		User: &transport.UserContext{Identity: "requester", Permissions: []string{"admin"}}, RunIncarnationID: originalRunIdentity(t, env.store, uuid.NewString()),
+	}
 	seedManagedPendingFixture(t, env.store, binding, true)
 	_, digest, args := policy.BindArgs(json.RawMessage(`{"amount":123}`))
 	row := &models.PendingAction{ID: pendingActionIDPrefix + uuid.NewString(), RunID: binding.RunID,

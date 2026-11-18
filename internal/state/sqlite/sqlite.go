@@ -318,6 +318,9 @@ func (s *SQLiteStore) migrations() []migrate.Migration {
 		{Version: 22, Name: "durable_run_usage", Up: s.upRunUsage, Down: func(context.Context) error {
 			return fmt.Errorf("durable usage cannot be downgraded safely; restore a reviewed backup and reconcile recorded usage")
 		}},
+		{Version: 23, Name: "run_finalization_identity", Up: func(ctx context.Context) error { return s.upRunFinalization(ctx) }, Down: func(context.Context) error {
+			return fmt.Errorf("record-bound accounting cannot be downgraded safely; restore a reviewed backup and reconcile usage")
+		}},
 	}
 }
 
@@ -1736,7 +1739,7 @@ func (s *SQLiteStore) ListActiveRunsCreatedBefore(ctx context.Context, before ti
 	if limit <= 0 {
 		limit = 100
 	}
-	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth FROM runs WHERE status IN ('pending','running') AND created_at < ?`
+	query := `SELECT tenant_id, run_id, thread_id, agent_id, status, metadata, input, config, output, error_msg, created_at, updated_at, parent_run_id, root_run_id, depth, incarnation_id FROM runs WHERE status IN ('pending','running') AND created_at < ?`
 	args := []interface{}{before.UTC().Format(time.RFC3339)}
 	if !tenant.IsSystem(ctx) {
 		query += ` AND tenant_id = ?`
@@ -1756,7 +1759,7 @@ func (s *SQLiteStore) ListActiveRunsCreatedBefore(ctx context.Context, before ti
 		var r models.Run
 		var metaStr, inputStr, configStr, outputStr, parentRunIDStr, rootRunIDStr sql.NullString
 		var createdStr, updatedStr string
-		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth); err != nil {
+		if err := rows.Scan(&r.TenantID, &r.RunID, &r.ThreadID, &r.AgentID, &r.Status, &metaStr, &inputStr, &configStr, &outputStr, &r.Error, &createdStr, &updatedStr, &parentRunIDStr, &rootRunIDStr, &r.Depth, &r.IncarnationID); err != nil {
 			return nil, err
 		}
 		r.ParentRunID = nullStringToPtr(parentRunIDStr)

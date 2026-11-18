@@ -34,6 +34,7 @@ from agent_framework import (  # noqa: E402
     MiddlewareFailure,
     UsageDetails,
 )
+from runkite_runner.assignment_identity import native_turn_id  # noqa: E402
 from runkite_runner.completion import CompletionDeliveryError  # noqa: E402
 from runkite_runner.tenant_ctx import bind_run, bind_tenant, reset_run, reset_tenant  # noqa: E402
 
@@ -145,7 +146,7 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
 
         self.adapter._state = patched_state  # type: ignore[method-assign]
         self.tenant = bind_tenant("default")
-        self.run = bind_run("run-1", 1)
+        self.run = bind_run("run-1", 1, run_incarnation_id="record-fixture")
 
     async def asyncTearDown(self) -> None:
         for store in self.stores:
@@ -163,6 +164,7 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
         messages: list[dict] | None = None,
         extra: dict | None = None,
         send_hook=None,
+        incarnation="record-fixture",
     ) -> tuple[str, list[dict]]:
         events: list[dict] = []
 
@@ -171,7 +173,7 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
             if send_hook is not None:
                 await send_hook(event)
 
-        run_binding = bind_run(run_id, generation)
+        run_binding = bind_run(run_id, generation, run_incarnation_id=incarnation)
         try:
             status = await self.adapter.execute(
                 {
@@ -182,6 +184,7 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
                     "generation": generation,
                     "input": {"messages": messages or [{"role": "user", "content": text}]},
                     **(extra or {}),
+                    "run_incarnation_id": incarnation,
                 },
                 send,
                 cancel or asyncio.Event(),
@@ -225,6 +228,54 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
             client=client, tools=[FunctionTool(name="write", func=write)], middleware=middleware
         )
         return client
+
+    def _make_receipt_legacy(self):
+        for key, raw in list(self.plane.blobs.items()):
+            value = json.loads(raw)
+            receipt = value["completed"]
+            original = receipt.pop("run_incarnation_id")
+            encoded = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+            # Legacy native SDK histories used the public run ID directly.
+            self.plane.blobs[key] = encoded.replace(
+                native_turn_id(receipt["run_id"], original).encode(), receipt["run_id"].encode()
+            )
+
+    async def test_same_public_id_new_record_executes_fresh_turn(self):
+        self.assertEqual((await self._execute("run-a", "hello", incarnation="record-a"))[0], "success")
+        pass
+        status, events = await self._execute("run-a", "hello", incarnation="record-b")
+        self.assertEqual(status, "success", events)
+        self.assertEqual(self.plane.puts, 2)
+        output = [event["data"] for event in events if event["method"] == "values"][-1]
+        self.assertEqual(len(output["messages"]), 4)
+        saved = json.loads(next(iter(self.plane.blobs.values())))
+        self.assertEqual(saved["completed"]["run_incarnation_id"], "record-b")
+
+    async def test_legacy_same_public_id_is_ambiguous_before_factory_or_text(self):
+        self.assertEqual((await self._execute("run-a", "hello", incarnation="record-a"))[0], "success")
+        self._make_receipt_legacy()
+        calls = []
+
+        def blocked_factory(context):
+            calls.append(context)
+            raise AssertionError("ambiguous receipt must not build an agent")
+
+        self.adapter.factories["managed_agent_framework"] = blocked_factory
+        status, events = await self._execute("run-a", "hello", incarnation="record-b")
+        self.assertEqual(status, "error", events)
+        self.assertEqual(calls, [])
+        self.assertEqual(self.plane.puts, 1)
+        self.assertFalse(any(event["method"] in {"messages", "values"} for event in events))
+
+    async def test_legacy_different_public_id_restores_conversation(self):
+        self.assertEqual((await self._execute("run-a", "hello", incarnation="record-a"))[0], "success")
+        self._make_receipt_legacy()
+        pass
+        status, events = await self._execute("run-b", "hello", incarnation="record-b")
+        self.assertEqual(status, "success", events)
+        self.assertEqual(self.plane.puts, 2)
+        output = [event["data"] for event in events if event["method"] == "values"][-1]
+        self.assertEqual(len(output["messages"]), 4)
 
     async def test_allowed_tools_omitted_or_named_allow_executes_once(self):
         for index, extra in enumerate(({}, {"allowed_tools": None}, {"allowed_tools": ["write"]})):
@@ -428,6 +479,7 @@ class AgentFrameworkAdapterTests(unittest.IsolatedAsyncioTestCase):
                 "tenant_id": "default",
                 "generation": 1,
                 "input": {"messages": [{"role": "user", "content": "hello slow path"}]},
+                "run_incarnation_id": "record-fixture",
             },
             send,
             cancel,

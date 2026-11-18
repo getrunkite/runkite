@@ -18,7 +18,7 @@ func TestCancelBusContextCancelDrainsSubsMap(t *testing.T) {
 	for i := 0; i < n; i++ {
 		subCtx, cancel := context.WithCancel(context.Background())
 		cancels[i] = cancel
-		if _, err := bus.SubscribeCancel(subCtx, fmt.Sprintf("run-%d", i)); err != nil {
+		if _, err := bus.SubscribeCancel(subCtx, fmt.Sprintf("run-%d", i), ""); err != nil {
 			t.Fatalf("SubscribeCancel: %v", err)
 		}
 	}

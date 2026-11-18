@@ -19,17 +19,17 @@ func TestLiteralRunIdentityValidationPrecedesBackendAccess(t *testing.T) {
 				run  func() error
 			}{
 				{"enqueue", func() error { return queue.Enqueue(ctx, &transport.RunAssignment{RunID: id}) }},
-				{"ack", func() error { _, err := queue.Ack(ctx, id, 1); return err }},
-				{"renew", func() error { _, err := queue.Renew(ctx, id, 1); return err }},
+				{"ack", func() error { _, err := queue.Ack(ctx, id, "", 1); return err }},
+				{"renew", func() error { _, err := queue.Renew(ctx, id, "", 1); return err }},
 				{"lookup", func() error { _, err := queue.LookupInflight(ctx, id); return err }},
-				{"nack", func() error { return queue.Nack(ctx, id, 1) }},
-				{"cancel", func() error { return queue.Cancel(ctx, id) }},
-				{"publish", func() error { return broker.Publish(ctx, id, nil) }},
-				{"subscribe", func() error { _, err := broker.Subscribe(ctx, id); return err }},
-				{"replay", func() error { _, err := broker.Replay(ctx, id, 0); return err }},
-				{"close", func() error { return broker.Close(id) }},
-				{"publish_cancel", func() error { return cancels.PublishCancel(ctx, id) }},
-				{"subscribe_cancel", func() error { _, err := cancels.SubscribeCancel(ctx, id); return err }},
+				{"nack", func() error { return queue.Nack(ctx, id, "", 1) }},
+				{"cancel", func() error { return queue.Cancel(ctx, id, "") }},
+				{"publish", func() error { return broker.Publish(ctx, id, "", nil) }},
+				{"subscribe", func() error { _, err := broker.Subscribe(ctx, id, ""); return err }},
+				{"replay", func() error { _, err := broker.Replay(ctx, id, "", 0); return err }},
+				{"close", func() error { return broker.Close(id, "") }},
+				{"publish_cancel", func() error { return cancels.PublishCancel(ctx, id, "") }},
+				{"subscribe_cancel", func() error { _, err := cancels.SubscribeCancel(ctx, id, ""); return err }},
 			}
 			for _, check := range checks {
 				if err := check.run(); err != errInvalidRunID {

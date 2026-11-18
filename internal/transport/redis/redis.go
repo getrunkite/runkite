@@ -143,8 +143,12 @@ const inflightPendingKey = "rk:inflight:pending"
 // use of this for exercising ReclaimStale's cutoff boundary precisely.
 var nowMillis = func() int64 { return time.Now().UnixMilli() }
 
-func (q *Queue) isCanceled(ctx context.Context, runID string) (bool, error) {
-	score, err := q.rdb.ZScore(ctx, canceledZSetKey, runID).Result()
+func canceledMember(runID, incarnation string) string {
+	return fmt.Sprintf("%d:%s%s", len(runID), runID, incarnation)
+}
+
+func (q *Queue) isCanceled(ctx context.Context, runID, incarnation string) (bool, error) {
+	score, err := q.rdb.ZScore(ctx, canceledZSetKey, canceledMember(runID, incarnation)).Result()
 	if err == redis.Nil {
 		return false, nil
 	}
@@ -152,14 +156,14 @@ func (q *Queue) isCanceled(ctx context.Context, runID string) (bool, error) {
 		return false, err
 	}
 	if nowMillis()-int64(score) > canceledMemberTTL.Milliseconds() {
-		_ = q.rdb.ZRem(ctx, canceledZSetKey, runID).Err()
+		_ = q.rdb.ZRem(ctx, canceledZSetKey, canceledMember(runID, incarnation)).Err()
 		return false, nil
 	}
 	return true, nil
 }
 
 func (q *Queue) Enqueue(ctx context.Context, job *transport.RunAssignment) error {
-	ok, err := q.isCanceled(ctx, job.RunID)
+	ok, err := q.isCanceled(ctx, job.RunID, job.RunIncarnationID)
 	if err != nil {
 		return err
 	}
@@ -229,10 +233,17 @@ end
 
 local run_id = job.run_id
 local gen = tonumber(job.generation) or 0
+local incarnation = job.run_incarnation_id
+if incarnation == nil then incarnation = '' end
+if type(incarnation) ~= 'string' then return {0, run_id, 0} end
+local existing = redis.call('HGET', data_key, run_id)
+if existing and existing ~= payload then return {2, run_id, gen} end
 local removed = redis.call('LREM', pending, 1, payload)
+if existing and removed > 0 then return {0, run_id, gen} end
 if removed == 0 then
   if redis.call('HEXISTS', data_key, run_id) == 1 then
     local current = tonumber(redis.call('HGET', gen_key, run_id)) or gen
+    if current ~= gen or redis.call('HGET', data_key, run_id) ~= payload then return {0, run_id, current} end
     if owner ~= '' then
       if current ~= gen or redis.call('HGET', data_key, run_id) ~= payload or redis.call('HEXISTS', owner_key, run_id) == 1 then
         return {0, run_id, current}
@@ -244,10 +255,11 @@ if removed == 0 then
   return {0, run_id, 0}
 end
 
-local cscore = redis.call('ZSCORE', canceled_key, run_id)
+local record_member = tostring(#run_id) .. ':' .. run_id .. incarnation
+local cscore = redis.call('ZSCORE', canceled_key, record_member)
 if cscore then
   if now_ms - tonumber(cscore) > canceled_ttl_ms then
-    redis.call('ZREM', canceled_key, run_id)
+    redis.call('ZREM', canceled_key, record_member)
   else
     return {0, run_id, 0}
   end
@@ -284,7 +296,9 @@ local now_ms = tonumber(ARGV[2])
 local canceled_ttl_ms = tonumber(ARGV[3])
 
 local promoted = 0
-while true do
+local remaining = redis.call('LLEN', pending)
+while remaining > 0 do
+  remaining = remaining - 1
   local payload = redis.call('LPOP', pending)
   if not payload then
     break
@@ -293,16 +307,22 @@ while true do
   if not ok or type(job) ~= 'table' or not job.run_id then
     -- drop corrupt payload
   else
-    local cscore = redis.call('ZSCORE', canceled_key, job.run_id)
+    local incarnation = job.run_incarnation_id or ''
+    if type(incarnation) ~= 'string' then return redis.error_reply('invalid inflight identity') end
+    local record_member = tostring(#job.run_id) .. ':' .. job.run_id .. incarnation
+    local cscore = redis.call('ZSCORE', canceled_key, record_member)
     local canceled = false
     if cscore then
       if now_ms - tonumber(cscore) > canceled_ttl_ms then
-        redis.call('ZREM', canceled_key, job.run_id)
+        redis.call('ZREM', canceled_key, record_member)
       else
         canceled = true
       end
     end
-    if not canceled then
+    local existing = redis.call('HGET', data_key, job.run_id)
+    if not canceled and existing and existing ~= payload then
+      redis.call('RPUSH', pending, payload)
+    elseif not canceled and not existing then
       local gen = tonumber(job.generation) or 0
       redis.call('HSET', data_key, job.run_id, payload)
       redis.call('ZADD', zset_key, score, job.run_id)
@@ -363,6 +383,9 @@ func (q *Queue) Dequeue(ctx context.Context, runnerKind string, timeout time.Dur
 		status, err := q.promotePending(ctx, payload)
 		if err != nil {
 			return nil, err
+		}
+		if status == 2 {
+			return nil, nil
 		}
 		if status == 0 {
 			// Canceled or already drained-and-discarded -- try again.
@@ -438,6 +461,11 @@ if not current_gen_str then
         return 0
     end
 end
+local identity_ok, identity_job = pcall(cjson.decode, redis.call('HGET', data_key, run_id))
+if not identity_ok or type(identity_job) ~= 'table' then return 0 end
+local actual_incarnation = identity_job.run_incarnation_id
+if actual_incarnation == nil then actual_incarnation = '' end
+if type(actual_incarnation) ~= 'string' or actual_incarnation ~= incarnation then return 0 end
 local current_gen = tonumber(current_gen_str)
 if current_gen == nil or current_gen ~= generation then
     return 0
@@ -457,6 +485,7 @@ local zset_key = KEYS[2]
 local gen_key = KEYS[3]
 local run_id = ARGV[1]
 local generation = tonumber(ARGV[2])
+local incarnation = ARGV[5]
 local owner_key = KEYS[4]
 if ARGV[3] ~= '!runkite:control-plane-recovery' then
   local actual_owner = redis.call('HGET', owner_key, run_id) or ''
@@ -480,14 +509,14 @@ return 1
 
 // Ack acknowledges successful processing of a job, fenced by generation
 // -- see transport.JobQueue's Ack doc comment for the full rationale.
-func (q *Queue) Ack(ctx context.Context, runID string, generation int64) (bool, error) {
+func (q *Queue) Ack(ctx context.Context, runID, incarnation string, generation int64) (bool, error) {
 	owner, err := workloadMutationArgument(ctx)
 	if err != nil {
 		return false, err
 	}
 	result, err := q.rdb.Eval(ctx, ackScript,
 		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, inflightOwnerKey},
-		runID, generation, owner, workloadExpiry(ctx),
+		runID, generation, owner, workloadExpiry(ctx), incarnation,
 	).Result()
 	if err != nil {
 		return false, err
@@ -512,6 +541,7 @@ local gen_key = KEYS[3]
 local run_id = ARGV[1]
 local score = ARGV[2]
 local generation = tonumber(ARGV[3])
+local incarnation = ARGV[6]
 local owner_key = KEYS[4]
 if ARGV[4] ~= '!runkite:control-plane-recovery' then
   local actual_owner = redis.call('HGET', owner_key, run_id) or ''
@@ -532,14 +562,14 @@ return 1
 
 // Renew extends an in-flight job's lease -- see transport.JobQueue's
 // Renew doc comment for the heartbeat mechanism and fencing this backs.
-func (q *Queue) Renew(ctx context.Context, runID string, generation int64) (bool, error) {
+func (q *Queue) Renew(ctx context.Context, runID, incarnation string, generation int64) (bool, error) {
 	owner, err := workloadMutationArgument(ctx)
 	if err != nil {
 		return false, err
 	}
 	result, err := q.rdb.Eval(ctx, renewScript,
 		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, inflightOwnerKey},
-		runID, nowMillis(), generation, owner, workloadExpiry(ctx),
+		runID, nowMillis(), generation, owner, workloadExpiry(ctx), incarnation,
 	).Result()
 	if err != nil {
 		return false, err
@@ -584,6 +614,7 @@ local canceled_key = KEYS[4]
 local owner_key = KEYS[5]
 local run_id = ARGV[1]
 local generation = tonumber(ARGV[2])
+local incarnation = ARGV[7]
 if ARGV[5] ~= '!runkite:control-plane-recovery' then
   local actual_owner = redis.call('HGET', owner_key, run_id) or ''
   if actual_owner ~= ARGV[5] then return 0 end
@@ -599,7 +630,7 @@ local ok, job = pcall(cjson.decode, data)
 if not ok or type(job) ~= 'table' or type(job.runner_kind) ~= 'string' then
     return redis.error_reply('invalid in-flight assignment')
 end
-local canceled_at = redis.call('ZSCORE', canceled_key, run_id)
+local canceled_at = redis.call('ZSCORE', canceled_key, tostring(#run_id) .. ':' .. run_id .. incarnation)
 if not canceled_at or tonumber(canceled_at) < tonumber(ARGV[3]) then
     if redis.call('HEXISTS', owner_key, run_id) == 1 then
       data = data:gsub('}$', ',"generation":' .. (generation + 1) .. '}')
@@ -615,35 +646,36 @@ redis.call('HDEL', owner_key, run_id)
 return 1
 `
 
-func (q *Queue) Nack(ctx context.Context, runID string, generation int64) error {
+func (q *Queue) Nack(ctx context.Context, runID, incarnation string, generation int64) error {
 	owner, err := workloadMutationArgument(ctx)
 	if err != nil {
 		return err
 	}
 	return q.rdb.Eval(ctx, nackScript,
 		[]string{inflightDataKey, inflightZSetKey, inflightGenKey, canceledZSetKey, inflightOwnerKey},
-		runID, generation, nowMillis()-canceledMemberTTL.Milliseconds(), queueKey(""), owner, workloadExpiry(ctx),
+		runID, generation, nowMillis()-canceledMemberTTL.Milliseconds(), queueKey(""), owner, workloadExpiry(ctx), incarnation,
 	).Err()
 }
 
-func (q *Queue) Cancel(ctx context.Context, runID string) error {
-	now := nowMillis()
-	cutoff := now - canceledMemberTTL.Milliseconds()
-	if _, err := q.rdb.TxPipelined(ctx, func(pipe redis.Pipeliner) error {
-		pipe.HDel(ctx, inflightDataKey, runID)
-		pipe.ZRem(ctx, inflightZSetKey, runID)
-		pipe.HDel(ctx, inflightGenKey, runID)
-		pipe.HDel(ctx, inflightOwnerKey, runID)
-		pipe.ZAdd(ctx, canceledZSetKey, redis.Z{Score: float64(now), Member: runID})
-		// Opportunistic trim so the zset cannot grow without bound.
-		pipe.ZRemRangeByScore(ctx, canceledZSetKey, "-inf", fmt.Sprintf("%d", cutoff))
-		// Drop legacy unbounded SET if an older binary left it behind.
-		pipe.Del(ctx, "rk:canceled")
-		return nil
-	}); err != nil {
-		return err
-	}
-	return nil
+func (q *Queue) Cancel(ctx context.Context, runID, incarnation string) error {
+	return q.rdb.Eval(ctx, `
+local data = redis.call('HGET', KEYS[1], ARGV[1])
+if data then
+  local ok, job = pcall(cjson.decode, data)
+  if not ok or type(job) ~= 'table' then return redis.error_reply('invalid inflight assignment') end
+  local actual = job.run_incarnation_id or ''
+  if type(actual) ~= 'string' then return redis.error_reply('invalid inflight identity') end
+  if actual == ARGV[2] then
+    redis.call('HDEL', KEYS[1], ARGV[1])
+    redis.call('ZREM', KEYS[2], ARGV[1])
+    redis.call('HDEL', KEYS[3], ARGV[1])
+    redis.call('HDEL', KEYS[4], ARGV[1])
+  end
+end
+redis.call('ZADD', KEYS[5], ARGV[4], ARGV[3])
+redis.call('ZREMRANGEBYSCORE', KEYS[5], '-inf', ARGV[5])
+return 1`, []string{inflightDataKey, inflightZSetKey, inflightGenKey, inflightOwnerKey, canceledZSetKey},
+		runID, incarnation, canceledMember(runID, incarnation), nowMillis(), nowMillis()-canceledMemberTTL.Milliseconds()).Err()
 }
 
 // reclaimStaleScript atomically finds stale in-flight jobs. Ordinary jobs
@@ -694,11 +726,16 @@ for _, run_id in ipairs(stale_ids) do
         redis.call('HDEL', gen_key, run_id)
         redis.call('HDEL', owner_key, run_id)
     else
-        local cscore = redis.call('ZSCORE', canceled_key, run_id)
+        local identity_ok, identity_job = pcall(cjson.decode, job_json)
+        if not identity_ok or type(identity_job) ~= 'table' then return redis.error_reply('invalid inflight assignment') end
+        local incarnation = identity_job.run_incarnation_id or ''
+        if type(incarnation) ~= 'string' then return redis.error_reply('invalid inflight identity') end
+        local record_member = tostring(#run_id) .. ':' .. run_id .. incarnation
+        local cscore = redis.call('ZSCORE', canceled_key, record_member)
         local is_canceled = false
         if cscore then
           if now_ms - tonumber(cscore) > canceled_ttl_ms then
-            redis.call('ZREM', canceled_key, run_id)
+            redis.call('ZREM', canceled_key, record_member)
           else
             is_canceled = true
           end
@@ -828,7 +865,7 @@ func parseDeadEntry(value interface{}) (transport.PoisonPill, error) {
 	if err := json.Unmarshal([]byte(jobJSON), &job); err != nil || job.RunID != runID {
 		return transport.PoisonPill{}, fmt.Errorf("bad dead entry assignment")
 	}
-	return transport.PoisonPill{RunID: runID, Generation: gen, AgentID: job.GraphID, TenantID: job.TenantID}, nil
+	return transport.PoisonPill{RunID: runID, RunIncarnationID: job.RunIncarnationID, Generation: gen, AgentID: job.GraphID, TenantID: job.TenantID}, nil
 }
 
 func (q *Queue) Len(ctx context.Context) (int64, error) {
@@ -921,7 +958,11 @@ const hungRunStreamTTL = 7 * 24 * time.Hour
 // sets a closed marker so late subscribers get an immediately-closed channel,
 // and expires the stream itself so it doesn't accumulate forever.
 // No local fan-out — subscribers read from the stream via XREAD.
-func (b *Broker) Publish(ctx context.Context, runID string, event *transport.RunEvent) error {
+func (b *Broker) Publish(ctx context.Context, runID, incarnation string, event *transport.RunEvent) error {
+	if err := transport.CheckRunEventIdentity(event, incarnation); err != nil {
+		return err
+	}
+	runID = transport.RunRecordKey(runID, incarnation)
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
@@ -951,7 +992,8 @@ func (b *Broker) Publish(ctx context.Context, runID string, event *transport.Run
 // Subscribe returns a channel that receives events for the given runID by
 // tailing the Redis Stream via blocking XREAD. The goroutine reads directly
 // from Redis, so it works across processes/nodes.
-func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
+func (b *Broker) Subscribe(ctx context.Context, runID, incarnation string) (<-chan *transport.RunEvent, error) {
+	runID = transport.RunRecordKey(runID, incarnation)
 	ch := make(chan *transport.RunEvent, 4096)
 
 	// If stream is already closed, return a closed channel immediately
@@ -982,14 +1024,14 @@ func (b *Broker) Subscribe(ctx context.Context, runID string) (<-chan *transport
 	b.tailers[runID][tailerID] = cancel
 	b.mu.Unlock()
 
-	go b.tailStream(subCtx, runID, tailerID, lastID, ch)
+	go b.tailStream(subCtx, runID, incarnation, tailerID, lastID, ch)
 
 	return ch, nil
 }
 
 // tailStream reads from the Redis Stream via blocking XREAD, forwarding events
 // to ch. Exits on terminal event, context cancellation, or stream closure.
-func (b *Broker) tailStream(ctx context.Context, runID string, tailerID uint64, lastID string, ch chan *transport.RunEvent) {
+func (b *Broker) tailStream(ctx context.Context, runID, incarnation string, tailerID uint64, lastID string, ch chan *transport.RunEvent) {
 	defer close(ch)
 	defer b.removeTailer(runID, tailerID)
 
@@ -1026,7 +1068,7 @@ func (b *Broker) tailStream(ctx context.Context, runID string, tailerID uint64, 
 					continue
 				}
 				var event transport.RunEvent
-				if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
+				if err := json.Unmarshal([]byte(dataStr), &event); err != nil || event.RunIncarnationID != incarnation {
 					continue
 				}
 
@@ -1045,7 +1087,8 @@ func (b *Broker) tailStream(ctx context.Context, runID string, tailerID uint64, 
 }
 
 // Replay returns stored events after the given sequence number.
-func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*transport.RunEvent, error) {
+func (b *Broker) Replay(ctx context.Context, runID, incarnation string, sinceSeq int64) ([]*transport.RunEvent, error) {
+	runID = transport.RunRecordKey(runID, incarnation)
 	msgs, err := b.rdb.XRange(ctx, streamKey(runID), "-", "+").Result()
 	if err != nil {
 		return nil, err
@@ -1058,10 +1101,10 @@ func (b *Broker) Replay(ctx context.Context, runID string, sinceSeq int64) ([]*t
 			continue
 		}
 		var event transport.RunEvent
-		if err := json.Unmarshal([]byte(dataStr), &event); err != nil {
+		if err := json.Unmarshal([]byte(dataStr), &event); err != nil || event.RunIncarnationID != incarnation {
 			continue
 		}
-		if event.Seq > sinceSeq {
+		if event.RunIncarnationID == incarnation && event.Seq > sinceSeq {
 			events = append(events, &event)
 		}
 	}
@@ -1083,7 +1126,8 @@ func (b *Broker) removeTailer(runID string, tailerID uint64) {
 
 // Close marks a run's stream as finished. Cancels all tailing goroutines
 // for this run (they close their channels on exit).
-func (b *Broker) Close(runID string) error {
+func (b *Broker) Close(runID, incarnation string) error {
+	runID = transport.RunRecordKey(runID, incarnation)
 	b.rdb.Set(context.Background(), closedKey(runID), "1", eventStreamTTL)
 	b.rdb.Expire(context.Background(), streamKey(runID), eventStreamTTL)
 
@@ -1122,7 +1166,8 @@ func (c *CancelBus) Ping(ctx context.Context) error {
 
 func cancelChannel(runID string) string { return "rk:cancel:" + runID }
 
-func (c *CancelBus) PublishCancel(ctx context.Context, runID string) error {
+func (c *CancelBus) PublishCancel(ctx context.Context, runID, incarnation string) error {
+	runID = transport.RunRecordKey(runID, incarnation)
 	return c.rdb.Publish(ctx, cancelChannel(runID), "cancel").Err()
 }
 
@@ -1144,7 +1189,8 @@ func (c *CancelBus) PublishCancel(ctx context.Context, runID string) error {
 // bench/REPORT.md's "Redis transport latency/memory blows up under
 // concurrency" finding, not connection-pool contention as originally
 // hypothesized there.
-func (c *CancelBus) SubscribeCancel(ctx context.Context, runID string) (<-chan struct{}, error) {
+func (c *CancelBus) SubscribeCancel(ctx context.Context, runID, incarnation string) (<-chan struct{}, error) {
+	runID = transport.RunRecordKey(runID, incarnation)
 	ch := make(chan struct{}, 1)
 
 	pubsub := c.rdb.Subscribe(ctx, cancelChannel(runID))

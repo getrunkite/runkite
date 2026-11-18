@@ -37,17 +37,17 @@ func TestRedisPoisonPillRetainsOriginalGenerationWhenIndexMissing(t *testing.T) 
 		if err != nil || live == nil || live.Generation != 2 || string(live.Input) != string(job.Input) || live.ConnectorNeeds == nil {
 			t.Fatalf("original dispatch was changed: assignment=%+v err=%v", live, err)
 		}
-		if current, err := producer.Renew(ctx, job.RunID, 0); err != nil || current {
+		if current, err := producer.Renew(ctx, job.RunID, "", 0); err != nil || current {
 			t.Fatalf("zero renewed positive poison lease: current=%t err=%v", current, err)
 		}
-		if accepted, err := producer.Ack(ctx, job.RunID, 3); err != nil || accepted {
+		if accepted, err := producer.Ack(ctx, job.RunID, "", 3); err != nil || accepted {
 			t.Fatalf("next generation consumed original lease: accepted=%t err=%v", accepted, err)
 		}
 	}
-	if current, err := producer.Renew(ctx, job.RunID, 2); err != nil || !current {
+	if current, err := producer.Renew(ctx, job.RunID, "", 2); err != nil || !current {
 		t.Fatalf("original generation renewal failed: current=%t err=%v", current, err)
 	}
-	if accepted, err := reaper.Ack(ctx, job.RunID, 2); err != nil || !accepted {
+	if accepted, err := reaper.Ack(ctx, job.RunID, "", 2); err != nil || !accepted {
 		t.Fatalf("durable completion Ack failed: accepted=%t err=%v", accepted, err)
 	}
 	if n, dead, err := producer.ReclaimStale(ctx, -time.Second, 2); err != nil || n != 0 || len(dead) != 0 {

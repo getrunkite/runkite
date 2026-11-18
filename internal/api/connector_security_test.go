@@ -16,7 +16,7 @@ func TestMCPHandlerRejectsAmbiguityAndOversizeBeforeForwarding(t *testing.T) {
 	s.SetConnectorRegistry(connector.NewRegistry(map[string]connector.ConnectorConfig{"files": {
 		Auth: connector.AuthConfig{Type: "api_key", APIKey: "synthetic"}, MCP: &connector.MCPConfig{URL: "https://example.invalid/mcp"},
 	}}))
-	binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "files-agent"}
+	binding := &auth.RunBinding{RunID: "synthetic-run", Generation: 1, TenantID: "acme", AgentID: "files-agent", RunIncarnationID: originalRunIdentity(t, s, "synthetic-run")}
 	for _, tc := range []struct {
 		name, body string
 		want       int

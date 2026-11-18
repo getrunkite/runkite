@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from runkite_runner.assignment_identity import receipt_matches_assignment, require_run_incarnation
 from runkite_runner.checkpoint import resolve_checkpoint_http_url
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.generic_worker import EventCallback, RunCancelled, make_event_factory, run_cancellable
@@ -277,6 +278,7 @@ class AgentFrameworkAdapter:
         )
 
         run_id = assignment["run_id"]
+        run_incarnation_id = require_run_incarnation(assignment.get("run_incarnation_id"))
         graph_id = assignment["graph_id"]
         thread_id = assignment.get("thread_id") or ""
         generation = int(assignment.get("generation") or 0)
@@ -459,7 +461,7 @@ class AgentFrameworkAdapter:
                 return "interrupted"
             await event_callback(make_event("lifecycle", {"event": "running"}))
             completed = prior.get("completed") if isinstance(prior, dict) else None
-            if isinstance(completed, dict) and completed.get("run_id") == run_id:
+            if isinstance(completed, dict) and receipt_matches_assignment(completed, run_id, run_incarnation_id):
                 if completed["input"] != input_key:
                     raise ValueError("reclaimed run input differs from its committed turn")
                 # Validate every replay payload before exposing any saved text.
@@ -615,6 +617,7 @@ class AgentFrameworkAdapter:
                 "messages": history,
                 "completed": {
                     "run_id": run_id,
+                    "run_incarnation_id": run_incarnation_id,
                     "input": input_key,
                     "status": "success",
                     "output": output,

@@ -35,6 +35,7 @@ type StoredState = {
   messages: ModelMessage[];
   completed: {
     run_id: string;
+    run_incarnation_id?: string;
     input: string;
     status: "success";
     output: Record<string, unknown>;
@@ -76,6 +77,9 @@ function storedState(value: unknown, graphId: string): StoredState | null {
     !Array.isArray(state.messages) ||
     state.completed?.status !== "success" ||
     typeof state.completed.run_id !== "string" ||
+    (state.completed.run_incarnation_id !== undefined &&
+      (typeof state.completed.run_incarnation_id !== "string" ||
+        !/^[\x21-\x7e]{1,256}$/.test(state.completed.run_incarnation_id))) ||
     typeof state.completed.input !== "string" ||
     !Array.isArray(state.completed.chunks) ||
     !state.completed.output ||
@@ -158,6 +162,7 @@ export class AiSdkAdapter implements ExecutionAdapter {
       {
         tenantId: assignment.tenant_id,
         runId: assignment.run_id,
+        runIncarnationId: assignment.run_incarnation_id,
         generation: assignment.generation,
         runnerKind: this.options.runnerKind ?? "typescript-ai-sdk",
         runnerToken: this.options.runnerToken,
@@ -171,6 +176,9 @@ export class AiSdkAdapter implements ExecutionAdapter {
     emit: (event: RunEvent) => Promise<void>,
     isCancelled: () => boolean,
   ): Promise<RunStatus> {
+    const runIncarnationId = assignment.run_incarnation_id;
+    if (typeof runIncarnationId !== "string" || !/^[\x21-\x7e]{1,256}$/.test(runIncarnationId))
+      throw new CompletionDeliveryError("assignment has no valid original record identity");
     let seq = 0;
     const event = (method: string, data: unknown) =>
       emit({ event_id: `${assignment.run_id}_evt_${++seq}`, seq, method, data, namespace: [], ts: Date.now() });
@@ -205,7 +213,9 @@ export class AiSdkAdapter implements ExecutionAdapter {
         return "interrupted";
       }
       await event("lifecycle", { event: "running" });
-      if (prior?.completed.run_id === assignment.run_id) {
+      if (prior?.completed.run_id === assignment.run_id && !prior.completed.run_incarnation_id)
+        throw new CompletionDeliveryError("legacy turn receipt cannot prove the original run record");
+      if (prior?.completed.run_id === assignment.run_id && prior.completed.run_incarnation_id === runIncarnationId) {
         if (prior.completed.input !== inputKey) throw new Error("reclaimed run input differs from its committed turn");
         for (const chunk of prior.completed.chunks) {
           if (chunk.type === "text-delta") {
@@ -372,7 +382,14 @@ export class AiSdkAdapter implements ExecutionAdapter {
           framework: "ai-sdk",
           graph_id: assignment.graph_id,
           messages: history,
-          completed: { run_id: assignment.run_id, input: inputKey, status: "success", output: { usage }, chunks },
+          completed: {
+            run_id: assignment.run_id,
+            run_incarnation_id: runIncarnationId,
+            input: inputKey,
+            status: "success",
+            output: { usage },
+            chunks,
+          },
         } satisfies StoredState,
         snapshot.etag,
       );

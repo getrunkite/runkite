@@ -81,7 +81,7 @@ func TestRedisAck_PreventsReclaim(t *testing.T) {
 	if got == nil {
 		t.Fatal("expected job")
 	}
-	if accepted, err := q.Ack(ctx, got.RunID, 0); err != nil || !accepted {
+	if accepted, err := q.Ack(ctx, got.RunID, "", 0); err != nil || !accepted {
 		t.Fatalf("Ack: accepted=%v err=%v", accepted, err)
 	}
 
@@ -113,7 +113,7 @@ func TestRedisNack_ReenqueuesImmediately(t *testing.T) {
 		t.Fatal("expected job")
 	}
 
-	if err := q.Nack(ctx, got.RunID, got.Generation); err != nil {
+	if err := q.Nack(ctx, got.RunID, "", got.Generation); err != nil {
 		t.Fatal(err)
 	}
 
@@ -151,7 +151,7 @@ func TestRedisReclaimStale_SkipsCanceledJob(t *testing.T) {
 	}
 
 	// Run gets canceled while in flight (e.g. client canceled, runner died).
-	if err := q.Cancel(ctx, got.RunID); err != nil {
+	if err := q.Cancel(ctx, got.RunID, ""); err != nil {
 		t.Fatal(err)
 	}
 
@@ -287,10 +287,10 @@ func TestRedisReclaimStale_NestedGenerationInInputDoesNotConfuseTheBump(t *testi
 	// is 2 -- this is the actual fencing property the bug above would
 	// have silently defeated (top-level generation staying at 1 would
 	// have made this Ack wrongly succeed).
-	if accepted, err := q.Ack(ctx, "run-nested-generation", 1); err != nil || accepted {
+	if accepted, err := q.Ack(ctx, "run-nested-generation", "", 1); err != nil || accepted {
 		t.Fatalf("stale generation-1 Ack: expected accepted=false, got accepted=%v err=%v", accepted, err)
 	}
-	if accepted, err := q.Ack(ctx, "run-nested-generation", 2); err != nil || !accepted {
+	if accepted, err := q.Ack(ctx, "run-nested-generation", "", 2); err != nil || !accepted {
 		t.Fatalf("current generation-2 Ack: expected accepted=true, got accepted=%v err=%v", accepted, err)
 	}
 }

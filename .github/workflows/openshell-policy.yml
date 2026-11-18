@@ -6,6 +6,7 @@ on:
       - scripts/qualify-isolated.py
       - scripts/isolated_policy_qualification.py
       - scripts/start-isolated-fixture.py
+      - scripts/isolated_fixture_environment.py
       - scripts/review-ha-supervisor.py
       - python/runkite_runner/isolated.py
       - python/runkite_runner/isolated_usage.py
@@ -19,6 +20,7 @@ on:
       - scripts/qualify-isolated.py
       - scripts/isolated_policy_qualification.py
       - scripts/start-isolated-fixture.py
+      - scripts/isolated_fixture_environment.py
       - scripts/review-ha-supervisor.py
       - python/runkite_runner/isolated.py
       - python/runkite_runner/isolated_usage.py
@@ -111,9 +113,10 @@ jobs:
               "--cli", os.environ["RUNKITE_TEST_ISOLATED_CLI"],
               "--gateway", os.environ["RUNKITE_TEST_ISOLATED_GATEWAY"],
               "--image", os.environ["RUNKITE_TEST_ISOLATED_IMAGE"],
-              "--prover", os.environ["RUNKITE_TEST_OPENSHELL_PROVER"],
-              "--output", os.path.join(os.environ["QUALIFICATION_OUTPUT"], "runtime/policy-evidence.json")
-          ])'
+              "--prover", sys.argv[1],
+              "--output", sys.argv[2]
+          ])' "$RUNKITE_TEST_OPENSHELL_PROVER" \
+            "$QUALIFICATION_OUTPUT/runtime/policy-evidence.json"
       - name: Require comparison, TLS and confirmed cleanup together
         run: |
           python - "$QUALIFICATION_OUTPUT" <<'PY'

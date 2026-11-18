@@ -54,10 +54,11 @@ func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Find the most recent non-terminal run
-	var activeRunID string
+	var activeRunID, activeIncarnation string
 	for _, run := range runs {
 		if !isTerminalStatus(run.Status) {
 			activeRunID = run.RunID
+			activeIncarnation = state.RunIdentity(run)
 			break
 		}
 	}
@@ -73,7 +74,7 @@ func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) 
 	// (same pattern as streamExistingRun / waitExistingRun).
 	streamCtx, stopStream := context.WithCancel(r.Context())
 	defer stopStream()
-	eventCh, err := s.broker.Subscribe(streamCtx, activeRunID)
+	eventCh, err := s.broker.Subscribe(streamCtx, activeRunID, activeIncarnation)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to subscribe")
 		return
@@ -105,7 +106,7 @@ func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) 
 		return nil
 	}
 
-	_ = s.replayAndTail(streamCtx, activeRunID, req.Since, channelSet, eventCh, sseEmit)
+	_ = s.replayAndTail(streamCtx, activeRunID, activeIncarnation, req.Since, channelSet, eventCh, sseEmit)
 }
 
 // replayAndTail is the transport-agnostic core of "replay history, then tail
@@ -115,7 +116,7 @@ func (s *Server) handleOpenThreadStream(w http.ResponseWriter, r *http.Request) 
 // semantics -- only how a converted event gets put on the wire differs.
 func (s *Server) replayAndTail(
 	ctx context.Context,
-	runID string,
+	runID, incarnation string,
 	since *int64,
 	channelSet map[string]bool,
 	eventCh <-chan *transport.RunEvent,
@@ -145,7 +146,7 @@ func (s *Server) replayAndTail(
 		}, true
 	}
 
-	return s.replayRunEvents(ctx, runID, since, eventCh, func(event *transport.RunEvent) error {
+	return s.replayRunEvents(ctx, runID, incarnation, since, eventCh, func(event *transport.RunEvent) error {
 		if se, ok := toStreamEvent(event); ok {
 			return emit(event, se)
 		}

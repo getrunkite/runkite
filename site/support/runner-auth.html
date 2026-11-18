@@ -117,6 +117,11 @@ export RUNNER_TOKEN="tok_b"</pre>
           <img src="../assets/ui-runs.png" alt="Runkite Admin Runs" width="960" height="600" />
         </figure>
 
+        <h2 id="assignment-identity">Assignment identity protocol 1 (Unreleased)</h2>
+        <p>Matching current-source planes and runners require <code>assignment_identity_version: 1</code> on <code>GetJob</code> and <code>WatchCancels</code> before work is delivered. Bound HTTP sends <code>X-Runkite-Run-Incarnation</code> with the existing run-ID header and <code>X-Runkite-Generation</code>. Events, status and heartbeat RPCs echo the same original-record identity. Missing or mismatched proof cannot inherit the current assignment's authority.</p>
+        <p>The exact tuple is <code>(run_id, run_incarnation_id, generation)</code>. Reclaim preserves incarnation and advances generation; a replacement record gets a different incarnation. Events and cancellation are record-scoped. Fleet tokens and workload-owner checks still authorize the caller. The identity is not a bearer secret, attestation or exactly-once business-effect guarantee. Mongo uses its ObjectID privately and does not gain SQL-only public references, governance or durable usage.</p>
+        <p>Back up database, queue and receipts, stop submissions/cron dispatch, and drain all workers and writers. Apply Postgres/SQLite migration 23 or MySQL migration 24 with <code>runkite db upgrade</code>, then deploy matching planes, workers and custom stores before traffic resumes. Startup also migrates; mixed old/new writers are unsupported. SQL accounting and holds bind atomically to the original record, and terminal-hook claims use a record key. Legacy unbound accounting, bare hook claims and same-ID receipts stay intact and can block finalization. Reconcile them explicitly and use fresh operation IDs for intentional new work; do not erase or backfill evidence to force execution. Downgrade requires a reviewed backup restore and accounting reconciliation. Published v0.9.0 packages retain their release contract. See the <a href="https://github.com/getrunkite/runkite/blob/main/docs/ops-runbook.md#assignment-identity-upgrade">upgrade procedure</a> and <a href="https://github.com/getrunkite/runkite/blob/main/docs/internal/assignment-identity.md">engineering contract and qualification limits</a>.</p>
+
         <h2>Kind and attempt binding</h2>
         <p>
           Since v0.5.6, token authentication binds the runner kind on the server context.
@@ -128,12 +133,12 @@ export RUNNER_TOKEN="tok_b"</pre>
           Tokens identify a fleet kind rather than individual pods. Every run-specific call
           must also echo the assignment generation. Generation <code>0</code> matches only
           an actual generation-zero assignment, so older/custom runners that omit the field
-          must upgrade for current positive-generation jobs.
+          must upgrade for current positive-generation jobs. Current source also requires capability 1 and original-record echoes as described above.
         </p>
         <h2>What to expect</h2>
         <ul class="expect">
           <li><strong>Not for Admin login</strong>: pasting a runner token into Admin fails.</li>
-          <li><strong>Run-binding</strong>: connector/store proxy calls need live run id + generation; tenant comes from the assignment.</li>
+          <li><strong>Run-binding</strong>: current-source connector/store proxy calls need exact run ID, original record identity and generation; tenant comes from the verified assignment.</li>
           <li><strong>Next</strong>: <a href="./credentials.html">credentials map</a>, <a href="./production.html">production day-0</a>, <a href="./ops.html">ops</a>.</li>
         </ul>
 

@@ -20,14 +20,16 @@ import (
 func installCredentialFixtureWorkload(t *testing.T, env *actionAPIEnv, owner *transport.WorkloadIdentity) {
 	t.Helper()
 	ctx := transport.WithWorkloadIdentity(env.ctx, owner)
-	if ok, err := env.store.BeginRunAttempt(ctx, "run", 3); err != nil || !ok {
+	if ok, err := env.store.BeginRunAttempt(ctx, "run", originalRunIdentity(t, env.store, "run"), 3); err != nil || !ok {
 		t.Fatalf("bind workload attempt: accepted=%v error=%v", ok, err)
 	}
 	live, err := env.queue.LookupInflight(env.ctx, "run")
 	if err != nil || live == nil {
 		t.Fatal("missing fixture assignment")
 	}
-	if accepted, err := env.queue.Ack(env.ctx, "run", live.Generation); err != nil || !accepted {
+	if accepted, err := env.queue.Ack(env.ctx, "run", originalRunIdentity(t, env.store,
+
+		"run"), live.Generation); err != nil || !accepted {
 		t.Fatalf("replace fixture assignment: accepted=%v error=%v", accepted, err)
 	}
 	live.Generation, live.WorkloadOwner = 3, owner
@@ -100,21 +102,25 @@ func TestCredentialReconciliationChecksLivenessWithoutWorkerCertificate(t *testi
 			}
 			switch scenario {
 			case "cancelled":
-				if err := env.queue.Cancel(env.ctx, "run"); err != nil {
+				if err := env.queue.Cancel(env.ctx, "run", originalRunIdentity(t, env.store,
+
+					"run")); err != nil {
 					t.Fatal(err)
 				}
 			case "reclaimed":
 				replacement := *owner
 				replacement.KeySHA256 = strings.Repeat("b", 64)
 				newCtx := transport.WithWorkloadIdentity(env.ctx, &replacement)
-				if ok, err := env.store.BeginRunAttempt(newCtx, "run", 4); err != nil || !ok {
+				if ok, err := env.store.BeginRunAttempt(newCtx, "run", originalRunIdentity(t, env.store, "run"), 4); err != nil || !ok {
 					t.Fatalf("reclaim durable attempt: accepted=%v error=%v", ok, err)
 				}
 				live, err := env.queue.LookupInflight(env.ctx, "run")
 				if err != nil || live == nil {
 					t.Fatal("missing original assignment during reclaim")
 				}
-				if accepted, err := env.queue.Ack(env.ctx, "run", 3); err != nil || !accepted {
+				if accepted, err := env.queue.Ack(env.ctx, "run", originalRunIdentity(t, env.store,
+
+					"run"), 3); err != nil || !accepted {
 					t.Fatal("could not retire original assignment")
 				}
 				live.Generation, live.WorkloadOwner = 4, nil

@@ -204,7 +204,7 @@ class SchemaRecoveryTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(204)
 
         tenant_token = bind_tenant("private tenant")
-        run_token = bind_run("private run", 42)
+        run_token = bind_run("private run", 42, run_incarnation_id="record-fixture")
         marker_token = marker.set("private assignment")
         try:
             with patch.object(si.httpx, "AsyncClient", client_factory(handler)):

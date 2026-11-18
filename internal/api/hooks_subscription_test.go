@@ -27,8 +27,8 @@ type toolHookSubscriptionBroker struct {
 	contexts chan context.Context
 }
 
-func (b *toolHookSubscriptionBroker) Subscribe(ctx context.Context, runID string) (<-chan *transport.RunEvent, error) {
-	ch, err := b.EventBroker.Subscribe(ctx, runID)
+func (b *toolHookSubscriptionBroker) Subscribe(ctx context.Context, runID string, incarnation string) (<-chan *transport.RunEvent, error) {
+	ch, err := b.EventBroker.Subscribe(ctx, runID, incarnation)
 	if err == nil {
 		b.mu.Lock()
 		b.ready[runID] = true
@@ -54,7 +54,7 @@ func (q *immediateToolHookQueue) Enqueue(ctx context.Context, job *transport.Run
 		{Generation: 1, Seq: 1, Method: "tool_call", Data: json.RawMessage(`{"tool":"search"}`)},
 		{Generation: 1, Seq: 2, Method: "end", Data: json.RawMessage(`{"status":"success"}`)},
 	} {
-		if err := q.broker.Publish(ctx, job.RunID, event); err != nil {
+		if err := q.broker.Publish(ctx, job.RunID, job.RunIncarnationID, withOriginalRunEvent(job.RunIncarnationID, event)); err != nil {
 			return err
 		}
 	}

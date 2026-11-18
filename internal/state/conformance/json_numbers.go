@@ -129,7 +129,7 @@ func runJSONNumberTests(t *testing.T, factory StoreFactory, raw string) {
 			if err := s.CreateRun(ctx, &models.Run{RunID: runID, ThreadID: "numbers-thread", AgentID: "agent", Status: models.RunStatusPending, CreatedAt: now, UpdatedAt: now}); err != nil {
 				t.Fatal(err)
 			}
-			if accepted, err := s.BeginRunAttempt(ctx, runID, 1); err != nil || !accepted {
+			if accepted, err := s.BeginRunAttempt(ctx, runID, originalRunIdentity(t, s, runID), 1); err != nil || !accepted {
 				t.Fatal(accepted, err)
 			}
 			completion := map[string]interface{}{fmt.Sprintf("result_%d", index): values}

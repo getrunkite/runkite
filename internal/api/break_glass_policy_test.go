@@ -43,7 +43,7 @@ func TestBreakGlass_BypassesConnectorPolicy(t *testing.T) {
 		req.SetPathValue("name", "sf")
 		return req.WithContext(auth.WithRunBinding(context.Background(), &auth.RunBinding{
 			RunID: "r1", Generation: 1, TenantID: "acme", AgentID: "sales",
-			User: &transport.UserContext{Identity: "alice"},
+			User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, "r1"),
 		}))
 	}
 
@@ -126,7 +126,7 @@ func TestBreakGlass_AuditNotesMandatoryHITLBypass(t *testing.T) {
 	req.SetPathValue("name", "gh")
 	binding := &auth.RunBinding{
 		RunID: "r-bg-m", Generation: 1, TenantID: "acme", AgentID: "sales",
-		User: &transport.UserContext{Identity: "alice"},
+		User: &transport.UserContext{Identity: "alice"}, RunIncarnationID: originalRunIdentity(t, store, "r-bg-m"),
 	}
 	req = req.WithContext(auth.WithRunBinding(context.Background(), binding))
 	attachConnectorSession(t, s, binding, "gh", req)

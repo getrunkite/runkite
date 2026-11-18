@@ -47,6 +47,7 @@ const RunnerServiceCtor = proto.runkite.runner.v0.RunnerService;
 export interface GetJobRequest {
   runnerKind: string;
   timeoutSeconds: number;
+  assignmentIdentityVersion: number;
 }
 export interface GetJobResponse {
   hasJob: boolean;
@@ -54,6 +55,7 @@ export interface GetJobResponse {
 }
 export interface RunEventProto {
   runId: string;
+  runIncarnationId: string;
   eventJson: string;
   /** See HeartbeatRequest.generation's own doc comment -- same fencing field, threaded through every RPC that identifies a specific dispatch attempt. */
   generation: string;
@@ -63,6 +65,7 @@ export interface StreamEventsResponse {
 }
 export interface ReportStatusRequest {
   runId: string;
+  runIncarnationId: string;
   status: string;
   errorMessage: string;
   generation: string;
@@ -74,12 +77,15 @@ export interface ReportStatusResponse {
 }
 export interface WatchCancelsRequest {
   runnerKind: string;
+  assignmentIdentityVersion: number;
 }
 export interface CancelSignal {
   runId: string;
+  runIncarnationId: string;
 }
 export interface HeartbeatRequest {
   runId: string;
+  runIncarnationId: string;
   /**
    * The attempt number this runner was handed in its RunAssignment (see
    * proto/runner.proto's HeartbeatRequest.generation for the full

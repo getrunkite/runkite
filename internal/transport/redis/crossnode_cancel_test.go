@@ -41,12 +41,12 @@ func TestCrossNodeCancelDelivery(t *testing.T) {
 
 	runID := "cross-node-cancel-1"
 
-	ch, err := busB.SubscribeCancel(ctx, runID)
+	ch, err := busB.SubscribeCancel(ctx, runID, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if err := busA.PublishCancel(ctx, runID); err != nil {
+	if err := busA.PublishCancel(ctx, runID, ""); err != nil {
 		t.Fatal(err)
 	}
 

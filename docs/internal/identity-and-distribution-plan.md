@@ -43,6 +43,22 @@ criteria, boundaries and linked engineering record.
    Automated maintainer tests are not an independent assessment. An external
    reviewer and genuine deployment evidence remain external acceptance gates.
 
+The combined RFE #47 composition is already implemented by
+`scripts/test-isolated-ha.sh` and its manual Linux workflow, with a historical
+hosted three-cycle pass on `96051cc` and a Linux baseline pass on `5c84c1f` in
+[run 44062021430](https://github.com/getrunkite/runkite/actions/runs/44062021430)
+(three cycles, 33.814 seconds). The Unreleased follow-up
+[hardens the existing fixture and its evidence](constrained-execution.md#rfe-47-current-source-qualification-hardening-unreleased),
+not a new runtime subsystem. Acceptance still requires executed available local
+fixtures, exact source/artifact/version/fault/duration receipts, CI gates and
+confirmed cleanup without paid cloud. Keep the external bridge experimental.
+The frozen candidate passed locally on macOS: three cycles, nine managed cases,
+55.693 seconds, gateway TLS, four controlled cancellation observations, three
+live-generation observations and confirmed runtime/backend cleanup. See the
+[evidence and artifact limits](identity-distribution-qualification.md#current-source-rfe-47-evidence-unreleased).
+Candidate hosted qualification remains pending before RFE #47 acceptance;
+RFE #52 stays a distinct independent-review gate and cannot be self-approved.
+
 The order permits independent packaging and runtime work in parallel. Identity,
 delegation and correlation must converge before the combined qualification.
 Every implementation record must distinguish source behavior, fixture evidence,

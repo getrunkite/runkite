@@ -244,6 +244,7 @@ See [Connectors](connectors.md).
 | `REDIS_URL` | (unset) | Redis URL; enables Redis transport (queue + broker + cancel) |
 | `NATS_URL` | (unset) | NATS URL; enables NATS/JetStream transport (queue + broker + cancel) -- checked after `REDIS_URL`, ignored if that's also set |
 | `KAFKA_URL` | (unset) | Kafka broker address(es), comma-separated for multiple; enables Kafka for the job queue only (see `internal/transport/kafka`'s own package doc for why) -- checked before `REDIS_URL`/`NATS_URL`, so setting both `KAFKA_URL` and `REDIS_URL` means "Kafka queue, Redis broker/cancelbus," not "Redis for everything" |
+| `RUNKITE_KAFKA_ALLOW_NONATOMIC_FENCES` | `false` | Unreleased: Kafka queue construction fails before broker access unless this is explicitly `true`. Compatible mode has no cross-replica atomic queue CAS, even with `REDIS_URL`. Redis only supplies separate event/cancel and reclaim-leader functions. |
 | `KAFKA_JOB_PARTITIONS` | `1` | Partitions per Kafka job topic, only applied the first time a topic is created -- raise to match/exceed your replica count for genuine concurrent multi-replica dequeue (see the Kafka transport section's own honest default-1 ceiling) |
 | `DATABASE_PATH` | `./runkite.db` | SQLite file path (used when none of `POSTGRES_DSN`/`MYSQL_DSN`/`MONGO_URI` is set) |
 | `QDRANT_URL` | (unset) | Qdrant REST base URL; fallback for `vector_store.url` when `vector_store.type` is `"qdrant"` (only read if `vector_store` is configured at all -- doesn't enable Qdrant by itself, unlike `POSTGRES_DSN`/`MYSQL_DSN`/`MONGO_URI` for the state backend) |
@@ -396,3 +397,30 @@ operator-listed DNS/model/telemetry/backend destinations. An enforcing CNI is
 required. The separate experimental `python-isolated` profile uses an external
 OpenShell 0.1.8 supervisor and an explicit JSONL workload. It does not rehost an
 unchanged SDK adapter. See [the implementation and qualification boundaries](internal/constrained-execution.md).
+
+## Assignment identity protocol (Unreleased)
+
+Current source requires matching plane and runner builds. `GetJob` and
+`WatchCancels` advertise `assignment_identity_version: 1`; an older or custom
+worker without that capability is rejected before work is dequeued. Each
+assignment supplies a nonempty `run_incarnation_id`. Preserve its exact printable
+ASCII value (1 to 256 bytes), without trimming or replacing it from a later read.
+
+Bound HTTP requests send `X-Runkite-Run-Incarnation` alongside the existing exact
+run-ID header and `X-Runkite-Generation`. Lifecycle gRPC messages echo the same
+record identity. The tuple is `(run_id, run_incarnation_id, generation)`:
+reclaim preserves the record and advances generation; deletion/recreation creates
+a different record. A missing proof has no fallback. Fleet credentials and any
+configured workload-owner certificate still authorize the caller.
+
+Follow the [coordinated upgrade](ops-runbook.md#assignment-identity-upgrade) and
+[engineering contract](internal/assignment-identity.md). Published v0.9.0 packages
+do not implement this source contract. SQL finalization also requires migration
+23 on Postgres/SQLite or 24 on MySQL: usage events and holds bind to the original
+record, with event uniqueness per run/record/source. Back up and drain all writers
+before `runkite db upgrade`, then deploy matching planes, runners and custom store
+implementations. Legacy unbound accounting and bare terminal-hook claims are
+preserved, not guessed or backfilled; a collision requires explicit reconciliation
+and fresh operation IDs for intentional new work. No new public Run field is
+added. Mongo's internal ObjectID proof does not enable SQL-only public run
+references, governance or durable usage.

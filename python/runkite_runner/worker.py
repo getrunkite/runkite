@@ -22,6 +22,7 @@ import grpc
 
 # Generated protobuf stubs
 from . import runner_pb2, runner_pb2_grpc
+from .assignment_identity import require_run_incarnation, valid_run_incarnation
 from .cancellation import PendingCancels, record_cancel_signal, register_run, unregister_run
 from .checkpoint import CheckpointerManager, resolve_checkpoint_http_url
 from .completion import CompletionDeliveryError, finish_run
@@ -729,7 +730,7 @@ async def run_worker(
     # attempts. Retain early signals until expiry so replacement registration
     # cannot consume or miss a genuine run-wide cancel.
     pending_cancels: PendingCancels = {}
-    pre_cancelled: set[str] = set()
+    pre_cancelled: set[tuple[str, str]] = set()
     pending_cancels_lock = asyncio.Lock()
 
     async def watch_cancels():
@@ -739,13 +740,20 @@ async def run_worker(
                 stream = stub.WatchCancels(
                     runner_pb2.WatchCancelsRequest(
                         runner_kind=runner_kind,
+                        assignment_identity_version=1,
                     ),
                     metadata=auth_metadata,
                 )
                 async for signal in stream:
                     run_id = signal.run_id
                     logger.info(f"Cancel signal received via gRPC for run {run_id}")
-                    await record_cancel_signal(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
+                    await record_cancel_signal(
+                        pending_cancels,
+                        pre_cancelled,
+                        pending_cancels_lock,
+                        run_id,
+                        getattr(signal, "run_incarnation_id", ""),
+                    )
             except grpc.aio.AioRpcError as e:
                 logger.error(f"WatchCancels error: {e.code()} {e.details()}")
                 await asyncio.sleep(1)
@@ -857,6 +865,7 @@ async def _handle_job(
     level; that's no longer where "one job" lives.
     """
     run_id = None
+    run_incarnation_id = ""
     # Fencing token -- see heartbeat.py's docstring. Initialized here
     # (not just below) so the outer except's own ReportStatus call
     # always has a defined value even if json.loads/assignment["run_id"]
@@ -865,6 +874,7 @@ async def _handle_job(
     try:
         assignment = json.loads(response.assignment_json)
         run_id = assignment["run_id"]
+        run_incarnation_id = require_run_incarnation(assignment.get("run_incarnation_id"))
         # Legacy assignments may omit this field. Zero is an exact legacy
         # generation, not a bypass for a current positive-generation job.
         generation = assignment.get("generation", 0)
@@ -883,7 +893,7 @@ async def _handle_job(
             trace_context=assignment.get("trace_context"),
         ) as span:
             tenant_token = bind_tenant(assignment.get("tenant_id"))
-            run_token = bind_run(run_id, generation)
+            run_token = bind_run(run_id, generation, run_incarnation_id)
             runner_binding = bind_runner(runner_kind, runner_token)
             try:
                 status = await _run_assigned_job(
@@ -913,7 +923,7 @@ async def _handle_job(
         logger.error(f"gRPC error handling run_id={run_id}: {e.code()} {e.details()}")
     except Exception as e:
         logger.exception(f"Worker error handling run_id={run_id}: {e}")
-        if run_id is not None:
+        if run_id is not None and valid_run_incarnation(run_incarnation_id):
             with contextlib.suppress(Exception):
                 await stub.ReportStatus(
                     runner_pb2.ReportStatusRequest(
@@ -921,6 +931,7 @@ async def _handle_job(
                         status="error",
                         error_message=str(e),
                         generation=generation,
+                        run_incarnation_id=run_incarnation_id,
                     ),
                     metadata=auth_metadata,
                 )
@@ -945,6 +956,8 @@ async def _run_assigned_job(
     status = "error"
     stream_task = None
 
+    run_incarnation_id = require_run_incarnation(assignment.get("run_incarnation_id"))
+
     # PROTOCOL §10.3: cancel-after-dequeue guard before any agent work.
     if await should_skip_run(
         http_address,
@@ -952,6 +965,7 @@ async def _run_assigned_job(
         runner_kind=runner_kind,
         runner_token=runner_token,
         generation=generation,
+        run_incarnation_id=run_incarnation_id,
         tenant_id=assignment.get("tenant_id") or "",
         require_authority=assignment.get("workload_owner") is not None,
     ):
@@ -975,12 +989,13 @@ async def _run_assigned_job(
                 run_id=run_id,
                 event_json=json.dumps(event),
                 generation=generation,
+                run_incarnation_id=run_incarnation_id,
             )
         )
 
     # Register this attempt without sharing its heartbeat's supersession
     # event with another assignment for the same run.
-    cancel_event = await register_run(pending_cancels, pre_cancelled, pending_cancels_lock, run_id)
+    cancel_event = await register_run(pending_cancels, pre_cancelled, pending_cancels_lock, run_id, run_incarnation_id)
 
     # Started as soon as run_id is known -- BEFORE StreamEvents' first
     # message, not after -- so the control plane's in-flight lease
@@ -990,7 +1005,14 @@ async def _run_assigned_job(
     # Supersession sets only this attempt's Event. A real WatchCancels
     # signal sets every overlapping attempt's Event through the registry.
     heartbeat_task = asyncio.create_task(
-        heartbeat_loop(stub, run_id, auth_metadata, generation=generation, cancel_event=cancel_event)
+        heartbeat_loop(
+            stub,
+            run_id,
+            auth_metadata,
+            generation=generation,
+            cancel_event=cancel_event,
+            run_incarnation_id=run_incarnation_id,
+        )
     )
 
     try:
@@ -1009,7 +1031,9 @@ async def _run_assigned_job(
             logger.exception("Run %s execution failed: %s", run_id, exc)
             status = "error"
         await event_queue.put(None)
-        status = await finish_run(stub, run_id, generation, status, stream_task, auth_metadata)
+        status = await finish_run(
+            stub, run_id, generation, status, stream_task, auth_metadata, run_incarnation_id=run_incarnation_id
+        )
         if status:
             logger.info(f"Run completed: run_id={run_id} status={status}")
         return status
@@ -1021,7 +1045,7 @@ async def _run_assigned_job(
             stream_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await stream_task
-        await unregister_run(pending_cancels, pending_cancels_lock, run_id, cancel_event)
+        await unregister_run(pending_cancels, pending_cancels_lock, run_id, cancel_event, run_incarnation_id)
 
 
 async def _poll_loop(
@@ -1068,6 +1092,7 @@ async def _poll_loop(
                 runner_pb2.GetJobRequest(
                     runner_kind=runner_kind,
                     timeout_seconds=30,
+                    assignment_identity_version=1,
                 ),
                 metadata=auth_metadata,
             )

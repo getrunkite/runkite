@@ -3,7 +3,7 @@
   "info": {
     "title": "Runkite Internal (Runner) API",
     "version": "0.1.0",
-    "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers. Run-bound proxy routes require X-Runkite-Generation and exactly one run identity header: X-Runkite-Run-Id or X-Runkite-Run-Id-B64 (canonical unpadded base64url of UTF-8). Unbound tenant-scoped routes accept X-Runkite-Tenant-Id or X-Runkite-Tenant-Id-B64; missing tenant means default. Do not send raw and encoded forms together. Bound routes derive the exact tenant from the assignment. Upgrade the plane before runners that use encoded identities.",
+    "description": "Runner-facing internal API. Authenticated via X-Runner-Kind + X-Runner-Token headers. Run-bound proxy routes require the original X-Runkite-Run-Incarnation from the dispatch, X-Runkite-Generation and exactly one public run identity header: X-Runkite-Run-Id or X-Runkite-Run-Id-B64 (canonical unpadded base64url of UTF-8). Unbound tenant-scoped routes accept X-Runkite-Tenant-Id or X-Runkite-Tenant-Id-B64; missing tenant means default. Do not send raw and encoded forms together. Bound routes derive the exact tenant from the assignment. Use matching proof-aware planes and runners. Missing or mismatched original record identity is rejected; never derive it from a newly looked-up run.",
     "license": {
       "name": "Apache License, Version 2.0",
       "url": "https://www.apache.org/licenses/LICENSE-2.0"
@@ -602,6 +602,46 @@
             },
             "name": "run_id",
             "in": "path"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -629,8 +669,15 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Original run binding or runner authentication missing"
+          },
+          "403": {
+            "description": "Original record, generation, kind, pool or workload authority refused"
           }
-        }
+        },
+        "description": "Validate the original stored record, generation, frozen runner kind, pool and optional workload owner. A matching terminal record remains readable after lease removal. Authentication or binding denial must stop execution."
       }
     },
     "/internal/agents/{agent_id}/schema": {
@@ -881,6 +928,46 @@
             },
             "name": "name",
             "in": "path"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -949,6 +1036,46 @@
             },
             "name": "name",
             "in": "path"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1050,7 +1177,49 @@
           "204": {
             "description": "Success"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       },
       "get": {
         "tags": [
@@ -1063,6 +1232,46 @@
             "name": "key",
             "in": "query",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
             "schema": {
               "type": "string"
             }
@@ -1111,7 +1320,49 @@
           "204": {
             "description": "Success"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/internal/store/items/search": {
@@ -1142,7 +1393,49 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/internal/store/namespaces": {
@@ -1179,7 +1472,49 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/internal/vectors/items": {
@@ -1203,7 +1538,49 @@
           "204": {
             "description": "Success"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       },
       "delete": {
         "tags": [
@@ -1225,7 +1602,49 @@
           "204": {
             "description": "Success"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/internal/vectors/search": {
@@ -1256,7 +1675,49 @@
               }
             }
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/internal/webhooks/dead-letters": {
@@ -1329,6 +1790,18 @@
             "description": "Canonical unpadded base64url of the UTF-8 parent run ID. Use instead of the raw header.",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
             }
           }
         ],
@@ -1423,6 +1896,46 @@
               "type": "integer",
               "minimum": 1,
               "default": 1000
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1525,6 +2038,46 @@
               "type": "string"
             },
             "description": "Use * for create-only. If the checkpoint_id already exists → 412. Cannot combine with If-Match."
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -1593,6 +2146,46 @@
             },
             "name": "checkpoint_id",
             "in": "path"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1651,6 +2244,46 @@
             },
             "name": "checkpoint_id",
             "in": "path"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1696,6 +2329,46 @@
               "type": "string"
             },
             "description": "Checkpoint namespace; empty/absent = root graph"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1750,6 +2423,46 @@
             },
             "name": "run_id",
             "in": "path"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "description": "Requires the exact active tenant/run incarnation/generation and, when enabled, the verified workload owner. SQL only. The body cannot select tenant, source, generation or authority. Latest acknowledged durable report is settled on completion/cancel; later reports are rejected.",
@@ -1803,6 +2516,46 @@
             },
             "name": "run_id",
             "in": "path"
+          },
+          {
+            "name": "X-Runkite-Run-Incarnation",
+            "in": "header",
+            "required": true,
+            "description": "Exact original record proof from RunAssignment.run_incarnation_id. Compare without normalization. This continuity value is not a secret or workload attestation.",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[!-~]+$"
+            }
+          },
+          {
+            "name": "X-Runkite-Generation",
+            "in": "header",
+            "required": true,
+            "description": "Exact assigned attempt generation. Zero matches only an actual zero assignment.",
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id",
+            "in": "header",
+            "required": false,
+            "description": "Exact public run ID. Supply exactly one raw or encoded run ID header.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "X-Runkite-Run-Id-B64",
+            "in": "header",
+            "required": false,
+            "description": "Canonical unpadded base64url of the UTF-8 public run ID, instead of the raw header.",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "description": "Requires the exact active tenant/run incarnation/generation and, when enabled, the verified workload owner. SQL only. The body cannot select tenant, source, generation or authority. Latest acknowledged durable report is settled on completion/cancel; later reports are rejected.",

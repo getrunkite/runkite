@@ -6,6 +6,7 @@ import json
 from functools import lru_cache
 from typing import Any
 
+from runkite_runner.assignment_identity import require_run_incarnation
 from runkite_runner.completion import CompletionDeliveryError
 from runkite_runner.opaque_checkpoint import OpaqueCheckpointClient, _strong_numeric_etag
 
@@ -215,7 +216,9 @@ def _validate_envelope(value: Any, graph_id: str) -> None:
     if _native_messages(value["history"]) != messages:
         raise ValueError("native history does not match its plain conversation")
     receipt = value["completed"]
-    _keys(receipt, {"status", "run_id", "input", "output", "text_events"})
+    _keys(receipt, {"status", "run_id", "input", "output", "text_events"}, {"run_incarnation_id"})
+    if "run_incarnation_id" in receipt:
+        require_run_incarnation(receipt["run_incarnation_id"])
     if receipt["status"] != "success" or type(receipt["run_id"]) is not str or not receipt["run_id"]:
         raise ValueError("native state requires a successful committed-turn receipt")
     if type(receipt["input"]) is not str:

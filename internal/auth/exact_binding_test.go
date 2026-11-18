@@ -13,14 +13,14 @@ import (
 
 func TestRunBindingPreservesExactTenant(t *testing.T) {
 	want := " acme "
-	lookup := mapInflight{"run": {RunID: "run", Generation: 1, TenantID: want}}
+	lookup := mapInflight{"run": {RunID: "run", Generation: 1, TenantID: want, RunIncarnationID: "fixture-record"}}
 	h := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := tenant.FromContext(r.Context()); got != want {
 			t.Errorf("tenant changed from %q to %q", want, got)
 		}
 	}))
 	req := httptest.NewRequest("GET", "/internal/store/items", nil)
-	req.Header.Set(auth.HeaderRunID, "run")
+	req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, lookup, req.Header, auth.HeaderRunID, "run"))
 	req.Header.Set(auth.HeaderGeneration, "1")
 	h.ServeHTTP(httptest.NewRecorder(), req)
 }
@@ -51,7 +51,7 @@ func TestRunBindingEncodedIdentityIsExact(t *testing.T) {
 	const encodedHeader = "X-Runkite-Run-Id-B64"
 	for _, id := range []string{"run/雪?#%", " legacy ", "line\nbreak"} {
 		t.Run(id, func(t *testing.T) {
-			lookup := mapInflight{id: {RunID: id, Generation: 1, TenantID: "acme", GraphID: "agent"}}
+			lookup := mapInflight{id: {RunID: id, Generation: 1, TenantID: "acme", GraphID: "agent", RunIncarnationID: "fixture-record"}}
 			called := false
 			h := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				called = true
@@ -60,6 +60,7 @@ func TestRunBindingEncodedIdentityIsExact(t *testing.T) {
 				}
 			}))
 			req := httptest.NewRequest("GET", "/internal/store/items", nil)
+			req.Header.Set(auth.HeaderRunIncarnation, "fixture-record")
 			req.Header.Set(encodedHeader, base64.RawURLEncoding.EncodeToString([]byte(id)))
 			req.Header.Set(auth.HeaderGeneration, "1")
 			w := httptest.NewRecorder()
@@ -71,13 +72,14 @@ func TestRunBindingEncodedIdentityIsExact(t *testing.T) {
 	}
 	for _, tc := range []struct{ raw, encoded string }{{"run", "cnVu"}, {" run ", ""}, {"", "not+url"}, {"", "_w"}, {"", "Zh"}} {
 		t.Run(tc.raw+tc.encoded, func(t *testing.T) {
-			lookup := mapInflight{"run": &transport.RunAssignment{RunID: "run", Generation: 1}}
+			lookup := mapInflight{"run": &transport.RunAssignment{RunID: "run", Generation: 1, RunIncarnationID: fixtureRecordIdentity()}}
 			h := auth.MiddlewareWithOpts(nil, nil, nil, auth.MiddlewareOpts{Inflight: lookup}, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Error("ambiguous binding reached handler") }))
 			req := httptest.NewRequest("GET", "/internal/store/items", nil)
 			if tc.raw != "" {
-				req.Header.Set(auth.HeaderRunID, tc.raw)
+				req.Header.Set(auth.HeaderRunID, withFixtureHeaderProof(t, lookup, req.Header, auth.HeaderRunID, tc.raw))
 			}
 			if tc.encoded != "" {
+				req.Header.Set(auth.HeaderRunIncarnation, "fixture-record")
 				req.Header.Set(encodedHeader, tc.encoded)
 			}
 			req.Header.Set(auth.HeaderGeneration, "1")
