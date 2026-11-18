@@ -80,8 +80,8 @@
         <p class="kicker">Govern</p>
         <h1>Tenant review</h1>
         <p class="lede">Give a reviewer access to their team's operations without making them a deployment-wide administrator.</p>
-        <p class="note"><strong>Availability:</strong> v0.7.0. Published v0.6.1 binaries do not implement this workspace. Rebuild from the matching source; approval and evidence storage require Postgres, MySQL or SQLite.</p>
-        <p>Reviewer permissions are implemented in that source. Upgrading every HTTP replica is a rollout requirement: old binaries cannot recognize the new role strings. API-key/JWT/webhook providers already default to strict permissions unless explicitly overridden; the Helm example also sets them to true.</p>
+        <p class="note"><strong>Availability:</strong> included in released control planes since v0.7.0, including v0.10.0. Use matching <a href="install.html#packages">released artifacts</a>; approval and evidence storage require Postgres, MySQL or SQLite.</p>
+        <p>Upgrade every HTTP replica before using reviewer roles introduced in v0.7.0; older binaries cannot recognize those role strings. Moving to v0.10.0 also requires the <a href="ops.html#assignment-identity-upgrade">coordinated upgrade</a>. API-key/JWT/webhook providers default to strict permissions unless explicitly overridden; the Helm example also sets them to true.</p>
 
         <h2 id="scope">Start with the right access</h2>
         <p>Global Admin remains the place for deployment-wide operations. A tenant reviewer uses the separate <code>/admin/review/</code> workspace. Its API takes the tenant from verified authentication, not an editable filter, URL or request header.</p>

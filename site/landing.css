@@ -107,6 +107,35 @@ h2 { font: 500 clamp(2.05rem, 3.4vw, 3rem)/1.15 var(--font-display); letter-spac
 .operations-grid { display: block; }
 .operations .section-heading { max-width: 48rem; margin-bottom: 2rem; }
 .operations .inline-link { margin-top: .8rem; }
+.product-tour { margin-bottom: 2rem; }
+.tour-controls { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; margin-bottom: 1rem; }
+.tour-controls button { display: flex; align-items: baseline; gap: .75rem; width: 100%; padding: 1.15rem; border: 1px solid #454039; border-radius: 3px; text-align: left; background: #141311; color: var(--ink-dim); font: inherit; cursor: pointer; }
+.tour-controls button[aria-selected="true"] { border-color: var(--accent); background: #292014; box-shadow: inset 3px 0 var(--accent); }
+.tour-controls button:hover, .tour-controls button:focus-visible { border-color: var(--accent-2); }
+.tour-number { color: var(--accent-2); font: .7rem var(--font-mono); }
+.tour-controls strong { display: block; font-size: 1rem; font-weight: 500; }
+.tour-controls small { display: block; color: #bab4ab; margin-top: .4rem; font-size: .8rem; line-height: 1.5; }
+.tour-arrow { margin-left: auto; color: var(--accent); }
+.tour-panels { min-width: 0; }
+.tour-panel { display: grid; grid-template-columns: minmax(0, .85fr) minmax(0, 1.45fr); align-items: start; border: 1px solid #4b4030; background: #121110; }
+.tour-panel + .tour-panel { margin-top: 1.5rem; }
+.product-tour[data-enhanced] .tour-panel { margin-top: 0; }
+.tour-panel-copy { padding: 1.4rem 1.5rem; }
+.tour-kicker { margin: 0 0 .6rem; color: var(--accent-2); text-transform: uppercase; letter-spacing: .08em; font: .65rem/1.6 var(--font-mono); }
+.tour-panel h3 { margin: 0 0 .6rem; font-size: 1.4rem; font-weight: 500; letter-spacing: -.02em; }
+.tour-panel-copy > p:not(.tour-kicker) { color: #bab4ab; font-size: .9rem; line-height: 1.7; margin: 0; }
+.tour-panel figure { min-width: 0; margin: 0; border-left: 1px solid #373026; }
+.tour-panel img { width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: cover; object-position: left top; }
+.tour-panel figcaption { display: flex; flex-wrap: wrap; gap: .4rem 1rem; justify-content: space-between; padding: .65rem 1rem; color: #aba69d; font-size: .72rem; border-top: 1px solid #373026; }
+.tour-boundary { max-width: 65rem; margin: 1.3rem 0 0; color: #a7a5a2; font-size: .82rem; line-height: 1.7; }
+.specialist-entry { display: flex; align-items: center; justify-content: space-between; gap: 2rem; margin-top: 1.3rem; padding: 1.4rem 1.8rem; border: 1px solid #494032; background: #181510; }
+.specialist-entry > div { max-width: 44rem; min-width: 0; }
+.specialist-entry .eyebrow { margin-bottom: .5rem; }
+.specialist-entry h3 { margin: 0 0 .6rem; font-size: 1.2rem; font-weight: 500; }
+.specialist-entry p:not(.eyebrow) { margin: 0; color: #b3ada2; font-size: .86rem; line-height: 1.75; }
+.specialist-entry > a { flex: none; }
+@media (max-width: 800px) { .tour-controls button { flex-direction: column; align-items: flex-start; gap: .4rem; padding: .85rem; } .tour-controls strong { font-size: .87rem; } .tour-controls small, .tour-arrow { display: none; } .tour-panel { grid-template-columns: minmax(0, 1fr); } .tour-panel figure { border-left: 0; border-top: 1px solid #373026; } .specialist-entry { align-items: flex-start; flex-direction: column; gap: 1rem; } }
+@media (max-width: 480px) { .tour-controls { gap: .4rem; } .tour-controls button { padding: .7rem .55rem; } .tour-controls strong { font-size: .8rem; } .tour-panel-copy { padding: 1.1rem; } .tour-panel h3 { font-size: 1.2rem; } .specialist-entry { padding: 1.2rem; } .site-nav { column-gap: .55rem; } }
 .operation-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .operation-list article { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: .75rem; padding: 1.5rem; border: 1px solid #34302a; background: #141311; min-width: 0; align-content: start; }
 .operation-number { font: .62rem var(--font-mono); color: #a58a58; padding-top: .35rem; }

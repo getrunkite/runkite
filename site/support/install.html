@@ -112,7 +112,9 @@
         <p><strong>Choose the execution boundary:</strong> managed agents use a runner; apps that keep their own loop can use a decision helper. The helpers are independent of the runner packages. A Node runner does not require the JavaScript governance helper. Both paths connect to your self-hosted control plane; an app-owned decision creates no managed Thread or Run.</p>
         <p>The <a href="https://github.com/getrunkite/runkite/tree/main/deploy/helm/runkite">Helm chart</a> is installed from the repository, not a published chart registry. Framework extras are options on the Python package, not additional PyPI projects. The managed chat UI bridge and runnable examples remain checkout assets. OpenAPI specifications are attached to <a href="https://github.com/getrunkite/runkite/releases/latest">GitHub Releases</a>. See <a href="sdk-integration.html">SDK integration contracts</a> for framework dependencies and capabilities. The Go binary is the server, not a separate Go client SDK.</p>
 
-        <h2>Option 1: laptop demo (5 minutes, not for anything real)</h2>
+        <p>Choose a setup: <a href="#local-demo">local demo</a>, <a href="#supported">Postgres + Redis</a> or <a href="#kubernetes">Kubernetes / Helm</a>. The Compose and Helm commands below run from a repository checkout. For an app that keeps its own model loop, continue to <a href="sdk-integration.html#app-owned">decision-helper setup</a> after starting your plane.</p>
+
+        <h2 id="local-demo">Option 1: laptop demo (5 minutes, not for anything real)</h2>
         <pre class="mono-block">git clone https://github.com/getrunkite/runkite.git && cd runkite
 docker compose -f docker-compose.dev.yml up -d --build</pre>
         <p>
@@ -121,11 +123,12 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
           The queue is process-local; the SQLite file is not backed by a named volume and
           is lost when that container is recreated. This profile is intentional: it's for kicking the tires and following
           <a href="first-agent.html">First agent</a>, not for anything you'd point real
-          traffic at. If you just want to see it work without cloning anything, use
-          <a href="try.html">Try it</a> instead, same idea, zero setup.
+          traffic at. Continue with the <a href="try.html#first-run">echo run and approval walkthrough</a>
+          after startup. To view Admin without installing anything, watch the
+          <a href="../#product-image">recorded preview</a>.
         </p>
 
-        <h2>Option 2: Supported profile (Postgres + Redis)</h2>
+        <h2 id="supported">Option 2: Supported profile (Postgres + Redis)</h2>
         <p>
           This stack uses the backend pair covered by the multi-replica Compose proof.
           It is a local wiring example until you add client authentication and TLS.
@@ -175,7 +178,7 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
           is required, the plane refuses to boot in an ambiguous "maybe secure" state.
         </p>
 
-        <h2>Option 3: Kubernetes / Helm</h2>
+        <h2 id="kubernetes">Option 3: Kubernetes / Helm</h2>
         <p>
           Same Postgres + Redis topology, packaged as a Helm chart under
           <code>deploy/helm/runkite</code>. Unlike the Compose demo above, the chart's
@@ -212,7 +215,7 @@ docker compose -f docker-compose.dev.yml up -d --build</pre>
         <p>Install the separate <code>runkite-governance</code> helper with <code>npm install runkite-governance</code> or <code>python -m pip install runkite-governance</code>. See <a href="sdk-integration.html#app-owned">decision-helper installation and boundaries</a>. The managed application UI bridge remains a checkout example, not another published SDK.</p>
         <p class="note"><strong>v0.8.0 upgrade:</strong> use the <a href="security-identity.html">identity and usage guide</a> for the coordinated SQL migration, runner HTTPS requirements and opt-in ownership rollout. Independent external assessment remains pending.</p>
         <p class="note"><strong>v0.7.0 upgrade:</strong> select matching plane and runner artifacts and pin image tags explicitly. New authority fields require a coordinated SQL upgrade with no mixed-version writers. See <a href="security-completion.html">Security operations</a> and <a href="ops.html#security-completion-upgrade">upgrade requirements</a>.</p>
-        <p>Custom or older runners must echo the assignment's exact generation on run-specific RPCs and bound HTTP calls. Generation <code>0</code> is not a wildcard for a later attempt. Runner tokens are bound to their kind. Upgrade and test custom runners with the plane before replacing production replicas.</p>
+        <p>Custom runners must advertise assignment identity protocol <code>1</code> and echo the assignment's exact <code>run_id</code>, <code>run_incarnation_id</code> and generation on run-specific RPCs and bound HTTP calls. Missing proof cannot borrow the current record's identity; generation <code>0</code> is not a wildcard for a later attempt. Runner tokens are bound to their kind. Follow the <a href="runner-auth.html#assignment-identity">custom-runner contract</a> and test the runner with the matching plane before replacing production replicas.</p>
 
         <h2>What to expect</h2>
         <ul class="expect">

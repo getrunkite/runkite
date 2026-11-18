@@ -24,9 +24,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./brand.css?v=20260925" />
-    <link rel="stylesheet" href="./landing.css?v=20261115-packages" />
+    <link rel="stylesheet" href="./landing.css?v=20261118-product" />
     <link rel="stylesheet" href="./execution-flow.css?v=20261108-playback" />
     <script src="./landing.js?v=20261108-playback" defer></script>
+    <script src="./product-tour.js?v=20261118-product" defer></script>
     <script src="./execution-flow.js?v=20261108-playback" defer></script>
   </head>
   <body>
@@ -34,6 +35,7 @@
     <header class="site-header">
       <a class="site-logo" href="./" aria-label="Runkite home">~/ <span>runkite</span></a>
       <nav class="site-nav" aria-label="Primary">
+        <a href="#operations">Product</a>
         <a href="#integration">Integrations</a>
         <a href="./support/">Docs</a>
         <a class="nav-hide-xs" href="./design/">Engineering</a>
@@ -47,12 +49,12 @@
             <a class="release-link" href="https://github.com/getrunkite/runkite/releases/tag/v0.10.0"><span class="release-dot" aria-hidden="true"></span> v0.10.0 <span class="release-separator" aria-hidden="true">/</span> Built to run on your infrastructure <span aria-hidden="true">↗</span></a>
             <p class="eyebrow">The self-hosted agent control plane</p>
             <h1 id="hero-title">Your agents.<br /><em>One control plane.</em></h1>
-            <p class="hero-lede">Dispatch runs, govern connector calls, review approvals and track usage. Keep your framework and model loop. Runkite handles the operations around them.</p>
+            <p class="hero-lede">Run agents across frameworks with shared connector policy, human approvals and durable run history. Inspect what happened, track usage and recover when a worker fails.</p>
             <div class="hero-actions">
               <a class="btn btn-primary" href="./support/install.html">Get started <span aria-hidden="true">→</span></a>
-              <a class="btn btn-ghost" href="#demo">Explore the demo <span aria-hidden="true">↓</span></a>
+              <a class="btn btn-ghost" href="#operations">See the product <span aria-hidden="true">↓</span></a>
             </div>
-            <p class="hero-footnote">Agent Protocol clients. LangGraph and other framework runners. One Go control plane.</p>
+            <p class="hero-footnote">Apache-2.0. Self-hosted. Keep your SDK and model loop.</p>
             <div class="hero-shortcuts">
               <a class="hero-flow-link" href="#execution">See how Runkite works <span aria-hidden="true">↓</span></a>
               <a class="hero-flow-link" href="#packages">Packages and downloads <span aria-hidden="true">↓</span></a>
@@ -93,6 +95,40 @@
             </div>
             <span class="guide-open" aria-hidden="true">↗</span>
           </a>
+        </div>
+      </section>
+
+      <section class="section operations" id="operations" aria-labelledby="operations-title">
+        <div class="wrap">
+          <div class="section-heading"><p class="eyebrow">See the operational side</p><h2 id="operations-title">An answer is only<br />part of the story.</h2><p>When an agent starts doing work, you need to inspect its runs, review sensitive connector calls and follow the decisions behind them. That is the layer Runkite adds.</p></div>
+          <div class="product-tour" id="product-tour">
+            <div class="tour-controls" data-tour-controls hidden>
+              <button type="button" id="tour-run-tab" data-tour-tab aria-controls="tour-run"><span class="tour-number" aria-hidden="true">01</span><span><strong>Inspect the run</strong><small>Input, output and event history.</small></span><span class="tour-arrow" aria-hidden="true">→</span></button>
+              <button type="button" id="tour-review-tab" data-tour-tab aria-controls="tour-review"><span class="tour-number" aria-hidden="true">02</span><span><strong>Review the request</strong><small>A person at the decision point.</small></span><span class="tour-arrow" aria-hidden="true">→</span></button>
+              <button type="button" id="tour-audit-tab" data-tour-tab aria-controls="tour-audit"><span class="tour-number" aria-hidden="true">03</span><span><strong>Follow the decision</strong><small>Policy records you can inspect.</small></span><span class="tour-arrow" aria-hidden="true">→</span></button>
+            </div>
+            <div class="tour-panels">
+              <section class="tour-panel" id="tour-run" data-tour-panel>
+                <div class="tour-panel-copy"><p class="tour-kicker">Managed execution</p><h3>Keep the run after the stream ends.</h3><p>Inspect a managed run's input, result and retained events in Admin. Run and thread records live at the plane, while your framework executes on a separate worker.</p><a class="inline-link" href="./support/runs.html">Runs and threads <span aria-hidden="true">→</span></a></div>
+                <figure><img src="./assets/ui-run-detail.png" alt="Recorded sample Run Detail screen showing a successful echo run and its lifecycle, values, updates and end events." width="1280" height="800" loading="lazy" /><figcaption>Recorded Admin capture with sample data. <a href="./assets/ui-run-detail.png">View full-size image <span aria-hidden="true">→</span></a></figcaption></figure>
+              </section>
+              <section class="tour-panel" id="tour-review" data-tour-panel>
+                <div class="tour-panel-copy"><p class="tour-kicker">Human approval</p><h3>Review a concrete operation.</h3><p>Marked connector calls can wait for approval. Review the request in Admin or use tenant-scoped review access. The Pending screen below shows two distinct sample requests.</p><a class="inline-link" href="./support/tenant-review.html">Reviewer access and approvals <span aria-hidden="true">→</span></a></div>
+                <figure><img src="./assets/ui-pending.png" alt="Recorded sample Pending screen showing two separate bank transfer requests awaiting review, with tenant, agent, tool and argument digest." width="1280" height="800" loading="lazy" /><figcaption>Recorded Admin capture with sample data. <a href="./assets/ui-pending.png">View full-size image <span aria-hidden="true">→</span></a></figcaption></figure>
+              </section>
+              <section class="tour-panel" id="tour-audit" data-tour-panel>
+                <div class="tour-panel-copy"><p class="tour-kicker">Policy audit</p><h3>Look beyond the final answer.</h3><p>Inspect recorded policy decisions by tenant, agent and action. SQL audit records decisions. Separate, opt-in connector action evidence records outgoing MCP attempts and observed responses.</p><a class="inline-link" href="./support/connector-actions.html">Audit and action evidence <span aria-hidden="true">→</span></a></div>
+                <figure><img src="./assets/ui-audit.png" alt="Recorded sample Audit screen with tenant and decision filters and an allowed break-glass mint decision. This is policy audit, not the connector action evidence screen." width="1280" height="800" loading="lazy" /><figcaption>Recorded Admin capture with sample data. <a href="./assets/ui-audit.png">View full-size image <span aria-hidden="true">→</span></a></figcaption></figure>
+              </section>
+            </div>
+          </div>
+          <div class="operation-list">
+            <article><span class="operation-number" aria-hidden="true">01</span><div><h3>Credentials resolved at the gate.</h3><p>Use configured environment, file or Vault references. The MCP proxy resolves and injects connector credentials on the way out. Non-MCP sessions can return credentials to the runner.</p><a href="./support/secrets.html">Credentials and Vault <span aria-hidden="true">→</span></a></div></article>
+            <article><span class="operation-number" aria-hidden="true">02</span><div><h3>Approval for this call, to this target.</h3><p>Managed approvals bind to the requested arguments and configured connector target. Configure tenant reviewers, requester separation and distinct-reviewer quorum where needed.</p><a href="./support/tenant-review.html">Review controls <span aria-hidden="true">→</span></a></div></article>
+            <article><span class="operation-number" aria-hidden="true">03</span><div><h3>Recover work after worker loss.</h3><p>Recover managed assignments and reject superseded attempts. Supported adapters retain committed turns. External tool effects still need application-level idempotency.</p><a href="./support/checkpoints.html">Recovery and its limits <span aria-hidden="true">→</span></a></div></article>
+            <article><span class="operation-number" aria-hidden="true">04</span><div><h3>Track usage. Set admission caps.</h3><p>Track reported tokens and estimated cost. Managed-run admission checks caps and reservations. Usage records distinguish unknown from reported zero.</p><a href="./support/finops.html">Usage and spend controls <span aria-hidden="true">→</span></a></div></article>
+          </div>
+          <p class="tour-boundary">Connector controls apply to calls that use Runkite's gate. Local tools and direct model calls do not automatically pass through it. An observed response does not prove an external business effect. <a href="./support/limitations.html">Read the boundaries</a>.</p>
         </div>
       </section>
 
@@ -243,7 +279,7 @@
               <ol class="mode-flow" aria-label="Managed execution flow"><li>Your app</li><li>Runkite</li><li>Your runner</li></ol>
               <ul class="mode-outcomes"><li>Admin Threads and Runs</li><li>Admission, cancellation and usage</li><li>Durable state and recovery</li></ul>
               <p class="mode-boundary">Your app keeps its UI, user authentication and presentation history. Local tools acquire connector policy only when they use the connector path.</p>
-              <a class="inline-link" href="./support/sdk-integration.html">Build with managed runs <span aria-hidden="true">→</span></a>
+              <a class="inline-link" href="./support/sdk-integration.html#execution-boundary">Build with managed runs <span aria-hidden="true">→</span></a>
             </article>
             <article class="mode-card app-owned">
               <div class="mode-label"><span>02</span> App-owned execution <span class="language-tag">Your existing backend</span></div>
@@ -252,9 +288,13 @@
               <ol class="mode-flow" aria-label="App-owned tool decision flow"><li>Your tool</li><li>Decision API</li><li>Your executor</li></ol>
               <ul class="mode-outcomes"><li>Allow, deny or pending</li><li>Shared connector policy</li><li>SQL decision and approval audit</li></ul>
               <p class="mode-boundary">No Runkite thread or run. Run kill switches, break-glass and spend caps do not apply. Pending continuation and execution stay with your app.</p>
-              <a class="inline-link" href="./support/sdk-integration.html">Govern an app-owned tool <span aria-hidden="true">→</span></a>
+              <a class="inline-link" href="./support/sdk-integration.html#app-owned">Govern an app-owned tool <span aria-hidden="true">→</span></a>
             </article>
           </div>
+          <aside class="specialist-entry" aria-labelledby="specialist-title">
+            <div><p class="eyebrow">Already using an MCP client?</p><h3 id="specialist-title">Make your managed agents callable as tools.</h3><p>Runkite's public <code>/mcp</code> interface exposes configured agents to MCP clients. An authorized call creates a managed run through the same admission path. This is the incoming agent interface, separate from the outgoing connector gate.</p></div>
+            <a class="inline-link" href="https://github.com/getrunkite/runkite/blob/main/docs/mcp-server.md">Connect an MCP client <span aria-hidden="true">↗</span></a>
+          </aside>
           <p class="integration-note">The AI SDK UI bridge includes Next and Nuxt route recipes for managed TypeScript and Python agents and remains a checkout example. The separate <code>runkite-governance</code> decision helpers are published on npm and PyPI starting with v0.8.0. They govern app-owned tool decisions without creating managed runs.</p>
         </div>
       </section>
@@ -301,19 +341,7 @@
             </article>
           </div>
           <p class="package-note">A managed Node.js runner uses <code>runkite-runner</code>; it does not require <code>runkite-governance</code>. Install the helper in an app that requests tool decisions itself. Framework extras, the source Helm chart and checkout examples are explained in the <a href="./support/install.html#packages">complete installation map</a>.</p>
-          <p class="package-note">Explore the <a href="./support/sdk-integration.html#governance-demo">scripted approval walkthrough</a> in the v0.9.0 source checkout: propose a local note, review it, then let the app continue once. No model account is needed. This walkthrough remains a checkout asset, separate from the published runner and governance packages.</p>
-        </div>
-      </section>
-
-      <section class="section operations" id="operations" aria-labelledby="operations-title">
-        <div class="wrap operations-grid">
-          <div class="section-heading"><p class="eyebrow">The operational layer</p><h2 id="operations-title">From agent code<br />to an accountable operation.</h2><p>Use the plane's gates and durable records for shared operations across your agents.</p><a class="inline-link" href="./support/grants.html">Read the governance guide <span aria-hidden="true">→</span></a></div>
-          <div class="operation-list">
-            <article><span class="operation-number" aria-hidden="true">01</span><div><h3>Resolve connector credentials at the plane.</h3><p>Resolve configured credentials at session time. MCP calls are proxied with those credentials; non-MCP sessions can return them to your runner.</p><a href="./support/connectors.html">Connector policy <span aria-hidden="true">→</span></a></div></article>
-            <article><span class="operation-number" aria-hidden="true">02</span><div><h3>Put a person at the decision point.</h3><p>Marked connector calls can wait for approval. Review the requested operation in Admin, then approve or deny it. SQL audit records the decision.</p><a href="./support/admin-guide.html">Approvals and audit <span aria-hidden="true">→</span></a><p>In v0.7.0: inspect recorded MCP attempts and give tenant reviewers approval or read-only evidence access without global Admin rights.</p><a href="./support/connector-actions.html">Connector action evidence <span aria-hidden="true">→</span></a><a href="./support/tenant-review.html">Tenant review access <span aria-hidden="true">→</span></a></div></article>
-            <article><span class="operation-number" aria-hidden="true">03</span><div><h3>Know what your runs consume.</h3><p>Track recorded tokens and estimated cost. Managed-run admission checks daily caps and configured reservations. Estimates and cancellation have explicit limits.</p><a href="./support/finops.html">Usage and spend controls <span aria-hidden="true">→</span></a></div></article>
-            <article><span class="operation-number" aria-hidden="true">04</span><div><h3>Recover work without accepting stale results.</h3><p>Dispatch generations fence superseded attempts. Completion and thread state commit together, with retryable finalization before the queue lease is acknowledged.</p><a href="./support/engineering.html">How recovery works <span aria-hidden="true">→</span></a><p>In v0.8.0: bind attempts to authenticated workers, constrain delegated credentials and distinguish unknown usage from reported zero.</p><a href="./support/security-identity.html">Explore identity and usage <span aria-hidden="true">→</span></a></div></article>
-          </div>
+          <p class="package-note">Explore the <a href="./support/sdk-integration.html#governance-demo">scripted approval walkthrough</a> in the source checkout: propose a local note, review it, then let the app continue once. No model account is needed. This walkthrough remains a checkout asset, separate from the published runner and governance packages.</p>
         </div>
       </section>
 
@@ -331,15 +359,34 @@
               <p>Managed execution: model calls happen in the runner.</p>
             </div>
           </div>
-          <div class="developer-start"><div><span class="eyebrow">Start with the local echo example</span><p>Clone the repo, build the plane, then start the Python runner in another terminal.</p></div><a class="inline-link" href="./support/install.html">Installation guide <span aria-hidden="true">→</span></a><pre tabindex="0" role="group" aria-label="Start the local echo example"><code># Terminal 1: control plane
-git clone https://github.com/getrunkite/runkite
-cd runkite &amp;&amp; make build
-./runkite dev --config examples/echo_agent/langgraph.json
-
-# Terminal 2: runner, from the same checkout
-pip install runkite-runner
-runkite-runner --config examples/echo_agent/langgraph.json \
-  --grpc-address 127.0.0.1:50051 --http-address http://127.0.0.1:2026</code></pre><p class="quickstart-note">The control plane needs Go to build from source; prebuilt binaries and images are also available. The local example needs a separate runner.</p></div>
+          <div class="developer-start">
+            <div>
+              <span class="eyebrow">Your first managed run</span>
+              <p>A local echo agent, a durable run and an Admin record. No model account needed.</p>
+            </div>
+            <a class="inline-link" href="./support/install.html">Binaries, containers and setup <span aria-hidden="true">→</span></a>
+            <p class="quickstart-note">macOS/Linux source path: Git, Make, Go 1.26.11+ and Python 3.12+. Use fresh terminals without existing Runkite backend settings. Both components below use v0.10.0.</p>
+            <pre tabindex="0" role="group" aria-label="Terminal 1: get the matching release and start the local control plane"><code># Terminal 1: get the release and leave the plane running
+git clone --branch v0.10.0 --depth 1 \
+  https://github.com/getrunkite/runkite.git runkite-v0.10.0
+cd runkite-v0.10.0
+CGO_ENABLED=0 make build
+./runkite dev --config examples/echo_agent/langgraph.json \
+  --port 2026 --grpc-port 50051</code></pre>
+            <pre tabindex="0" role="group" aria-label="Terminal 2: install the matching runner in a virtual environment and start it"><code># Terminal 2: from the directory where you cloned the repo
+cd runkite-v0.10.0
+python3 -m venv .venv
+.venv/bin/python -m pip install "runkite-runner==0.10.0"
+.venv/bin/runkite-runner --config examples/echo_agent/langgraph.json \
+  --grpc-address 127.0.0.1:50051 --http-address http://127.0.0.1:2026</code></pre>
+            <pre tabindex="0" role="group" aria-label="Terminal 3: submit a real echo run and wait for its durable result"><code># Terminal 3: once the plane and runner are ready
+curl -fsS --max-time 60 http://127.0.0.1:2026/runs/wait \
+  -H 'Content-Type: application/json' \
+  -d '{"agent_id":"echo_agent","input":{"messages":[{"role":"user","content":"Hello, Runkite!"}]}}' \
+  | python3 -m json.tool</code></pre>
+            <p class="quickstart-note">Look for <code>run.status: "success"</code> and a final <code>values.messages</code> entry containing <code>"Hello, Runkite!"</code>. Then <a href="http://127.0.0.1:2026/admin/">open your local Admin</a> to inspect the new thread and run.</p>
+            <p class="quickstart-note">This local development profile uses SQLite and an in-process queue without authentication. Keep it local. For deployment, follow the <a href="./support/production.html">production setup</a>. Prefer a prebuilt binary? The <a href="./support/install.html#packages">installation map</a> covers the published artifacts.</p>
+          </div>
         </div>
       </section>
 

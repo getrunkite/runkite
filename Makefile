@@ -30,7 +30,7 @@ check-doc-links:
 
 .PHONY: test-site
 test-site: check-doc-links
-	node --test tests/site_docs_test.cjs tests/site_execution_flow_test.cjs tests/site_admin_status_test.cjs tests/site_walkthrough_test.cjs
+	node --test tests/site_docs_test.cjs tests/site_execution_flow_test.cjs tests/site_admin_status_test.cjs tests/site_walkthrough_test.cjs tests/site_product_tour_test.cjs
 
 .PHONY: test-trinity-specialist
 test-trinity-specialist:

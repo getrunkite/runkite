@@ -126,7 +126,7 @@
           <a href="#governance-setup">administrator and application setup</a>.
         </p>
 
-        <h2>Choose the execution boundary</h2>
+        <h2 id="execution-boundary">Choose the execution boundary</h2>
         <div class="table-wrap">
           <table class="matrix">
             <thead><tr><th>Caller</th><th>App keeps its loop</th><th>Runkite dispatches the loop</th></tr></thead>
@@ -139,6 +139,8 @@
             </tbody>
           </table>
         </div>
+
+        <p>For a first managed run, use the <a href="try.html#local-compose">local echo walkthrough</a>. It starts the plane and runner together and requires no model account. Then choose a framework below. If your application keeps execution, go directly to <a href="#app-owned">app-owned tool governance</a>. Compare the <a href="install.html#packages">published package roles</a> before installing a runner or helper.</p>
 
         <p class="note">
           <strong>v0.6.0 runner identity fixes:</strong> TypeScript status checks now

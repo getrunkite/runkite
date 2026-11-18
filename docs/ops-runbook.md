@@ -341,8 +341,10 @@ and the [engineering rationale](internal/target-bound-approvals.md).
 
 ## Connector action evidence upgrade
 
-**v0.7.0:** rebuild the control plane; published v0.6.1
-binaries do not implement `policy.action_evidence`. Take a verified backup and
+**Available since v0.7.0:** use matching released control-plane artifacts;
+v0.10.0 includes `policy.action_evidence`. When moving to v0.10.0, follow the
+[coordinated upgrade](#assignment-identity-upgrade) as well as this capture
+procedure. Take a verified backup and
 stop control-plane writers before `runkite db upgrade`. This adds Postgres/SQLite
 schema 17 and MySQL schema 18, including action history and immutable run
 incarnations. The later [target-binding upgrade](#connector-target-revision-upgrade)
