@@ -4,6 +4,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+- Align the Microsoft governance example with the public `@tool` decorator and
+  verify model-facing parameters, defaults and governance outcomes in streaming
+  and non-streaming calls. The pinned SDK already infers parameters for the
+  previous direct constructor; this adds explicit contract coverage and a tool
+  description.
+
 - Add a connected [engineering notebook](docs/internal/engineering-notebook/README.md)
   through v0.10.0, with five source-backed chapters, a decision map and study
   prompts. Preserve the historical walkthrough and distinguish recorded history,

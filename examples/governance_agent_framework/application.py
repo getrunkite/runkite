@@ -10,7 +10,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-from agent_framework import Agent, FunctionTool
+from agent_framework import Agent, tool
 from runkite_governance import GovernanceClient
 from runkite_governance.agent_framework import (
     GovernanceFunctionMiddleware,
@@ -129,13 +129,13 @@ class NoteStore:
 def build_notes_agent(client: Any, governance: GovernanceClient, store: NoteStore, operation_id: str) -> Agent:
     """Build one app-request-scoped agent. The app supplies the model client and stable operation ID."""
 
+    @tool(name="create_note")
     async def create_note(title: str, body: str, importance: str = "normal") -> str:
+        """Create a workspace note with a title, body and optional importance."""
         result = await asyncio.to_thread(
             store.execute_allowed, operation_id, {"title": title, "body": body, "importance": importance}
         )
         return json.dumps(result)
-
-    function = FunctionTool(name="create_note", func=create_note)
 
     async def save_pending(invocation: PendingInvocation) -> None:
         await asyncio.to_thread(store.save_pending, invocation)
@@ -143,11 +143,11 @@ def build_notes_agent(client: Any, governance: GovernanceClient, store: NoteStor
     middleware = GovernanceFunctionMiddleware(
         governance,
         agent_id="notes-app",
-        functions=[GovernedFunction(function=function, connector="workspace", tool="createNote")],
+        functions=[GovernedFunction(function=create_note, connector="workspace", tool="createNote")],
         operation_id=lambda _context: operation_id,
         on_pending=save_pending,
     )
-    return Agent(client=client, tools=[function], middleware=[middleware])
+    return Agent(client=client, tools=[create_note], middleware=[middleware])
 
 
 async def continue_note(store: NoteStore, governance: GovernanceClient, operation_id: str) -> dict[str, Any]:
