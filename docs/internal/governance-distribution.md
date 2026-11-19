@@ -64,6 +64,29 @@ Python artifacts. `scripts/verify_governance_npm.mjs` checks every npm member an
 exercises the public export. A missing SDK dependency or inability to run an HTTP
 fixture is a failure, not an automatic qualification skip.
 
+## Qualify the model-facing tool contract
+
+The Microsoft example uses the public `@tool` decorator, then registers that
+same `FunctionTool` object with both `Agent` and `GovernedFunction`. The SDK owns
+signature reflection and the model-facing schema; Runkite binds the resulting
+callable, schema and arguments at the execution gate. Keeping one tool object
+avoids defining a separate policy schema that can drift from native execution.
+
+On the pinned `agent-framework-core==1.23.0`, direct construction with
+`FunctionTool(name=..., func=...)` already infers the note parameters. Switching
+the example to `@tool` follows the documented declaration pattern and adds its
+docstring description. This is example alignment, not a reproduced
+missing-parameters fix.
+
+Scripted tool calls alone cannot qualify parameter discovery: a test can inject
+valid arguments even if the model was never offered a usable tool definition.
+The example tests therefore capture the public tools passed into the model
+client. Streaming and non-streaming allow, deny and pending cases check required
+`title` and `body`, the optional `importance` default, normalized policy
+arguments, note effects and saved pending proposals. These are provider-free
+contract checks. A live provider's wire format and model choices require their
+own qualification.
+
 ## Build once and recover conservatively
 
 `scripts/release_artifacts.py` never publishes. It builds an artifact set once,

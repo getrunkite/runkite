@@ -3,7 +3,7 @@
 The optional `GovernanceFunctionMiddleware` checks local Python function calls
 through Runkite's existing `POST /governance/decide` API. The app keeps its model
 client and loop. This integration uses `agent-framework-core==1.23.0` and the
-framework's public `FunctionMiddleware`, `FunctionTool` and `Agent` APIs.
+framework's public `tool`, `FunctionMiddleware`, `FunctionTool` and `Agent` APIs.
 
 Only allow reaches native function execution. Deny and pending raise
 `GovernanceBlockedError`, a native `MiddlewareFailure`, so the model loop cannot
@@ -27,6 +27,10 @@ an offline scripted model client, and a fake governance transport. They need no
 provider SDK, credentials, model endpoint or running plane. Dependencies must be
 installed first. The base governance package still has no runtime dependencies;
 Microsoft's framework loads only when its optional module is imported.
+
+The tests also inspect the tool schema passed to the model client in streaming
+and non-streaming calls, before supplying a scripted tool invocation. This
+checks parameter discovery as well as allow, deny and pending execution.
 
 ## Use your existing model client
 
@@ -78,6 +82,19 @@ outbox. A local database transaction cannot make a remote write exactly once.
 Protect the continuation route and operation ownership in your application.
 
 ## Attach middleware to another agent
+
+The sample defines `create_note` with the framework's public `@tool` decorator.
+It derives the model-facing schema from the Python signature and uses the
+docstring as the tool description. `title` and `body` are required strings;
+`importance` is an optional string with the default `"normal"`. The same
+decorated tool object is passed to `Agent` and the governance binding.
+
+On the pinned 1.23.0 SDK, `FunctionTool(name=..., func=...)` also infers those
+parameters. The decorator makes the example follow the
+[documented function-tool pattern](https://learn.microsoft.com/en-us/agent-framework/agents/tools/function-tools)
+and supplies its description. The schema tests guard this contract when the SDK
+is upgraded. They inspect the public model-client boundary without contacting
+a live provider.
 
 Register the exact local `FunctionTool` objects in `GovernedFunction` bindings.
 Set `agent_id`, connector and tool names on the server. Supply an `operation_id`
