@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./brand.css?v=20260925" />
-    <link rel="stylesheet" href="./landing.css?v=20261118-reflow" />
+    <link rel="stylesheet" href="./landing.css?v=20261120-ecosystem" />
     <link rel="stylesheet" href="./execution-flow.css?v=20261108-playback" />
     <script src="./landing.js?v=20261108-playback" defer></script>
     <script src="./product-tour.js?v=20261118-product" defer></script>
@@ -35,7 +35,7 @@
     <header class="site-header">
       <a class="site-logo" href="./" aria-label="Runkite home">~/ <span>runkite</span></a>
       <nav class="site-nav" aria-label="Primary">
-        <a href="#integration">Integrations</a>
+        <a href="#ecosystem">Integrations</a>
         <a href="./support/">Docs</a>
         <a class="nav-hide-xs" href="./design/">Engineering</a>
         <a class="nav-github" href="https://github.com/getrunkite/runkite">GitHub <span aria-hidden="true">↗</span></a>
@@ -94,6 +94,64 @@
             </div>
             <span class="guide-open" aria-hidden="true">↗</span>
           </a>
+        </div>
+      </section>
+
+      <section class="section ecosystem" id="ecosystem" aria-labelledby="ecosystem-title">
+        <div class="wrap">
+          <div class="ecosystem-heading">
+            <div class="section-heading">
+              <p class="eyebrow">Works with your stack</p>
+              <h2 id="ecosystem-title">Your tools.<br />Connected through Runkite.</h2>
+              <p>Evaluate an agent, call it from another workflow, connect a chat UI or follow its traces. Start with a documented integration through REST, MCP, AG-UI or OTLP.</p>
+            </div>
+            <a class="inline-link" href="./support/integrations.html">Find your integration <span aria-hidden="true">→</span></a>
+          </div>
+          <div class="ecosystem-grid">
+            <a class="ecosystem-card" href="./support/promptfoo.html">
+              <span class="ecosystem-purpose">Evaluate agent behaviour</span>
+              <h3>promptfoo</h3>
+              <p>Send test cases through managed runs and check the returned answers before changing your agent.</p>
+              <span class="ecosystem-scope">Checkout provider · ordinary evaluations</span>
+              <span class="ecosystem-action">Set up evaluations <span aria-hidden="true">→</span></span>
+            </a>
+            <a class="ecosystem-card" href="./support/integrations.html#callers">
+              <span class="ecosystem-purpose">Call a specialist</span>
+              <h3>Langflow <span>+ Trinity</span></h3>
+              <p>Keep the surrounding workflow and invoke a Runkite-managed agent as an MCP tool.</p>
+              <span class="ecosystem-scope">Checkout client recipe and specialist bridge</span>
+              <span class="ecosystem-action">Choose an MCP caller <span aria-hidden="true">→</span></span>
+            </a>
+            <a class="ecosystem-card" href="./support/integrations.html#interfaces">
+              <span class="ecosystem-purpose">Connect your chat UI</span>
+              <h3>AG-UI <span>+ AI SDK UI</span></h3>
+              <p>Present managed text responses in your app, with retained replay, reconnect and explicit Stop.</p>
+              <span class="ecosystem-scope">Checkout bridges · app-owned routes</span>
+              <span class="ecosystem-action">Connect a frontend <span aria-hidden="true">→</span></span>
+            </a>
+            <a class="ecosystem-card" href="./support/integrations.html#tracing">
+              <span class="ecosystem-purpose">Follow the traces</span>
+              <h3>Langfuse <span>+ OTLP backends</span></h3>
+              <p>Send operational spans to your own observability backend using the existing OTLP exporters.</p>
+              <span class="ecosystem-scope">Exporter configuration · native Langfuse check</span>
+              <span class="ecosystem-action">Configure trace export <span aria-hidden="true">→</span></span>
+            </a>
+            <a class="ecosystem-card" href="./support/integrations.html#routing">
+              <span class="ecosystem-purpose">Route model requests</span>
+              <h3>vLLM Semantic Router</h3>
+              <p>Let the runner's model client use Semantic Router while Runkite manages the agent's execution.</p>
+              <span class="ecosystem-scope">Published walkthrough · external model router</span>
+              <span class="ecosystem-action">Explore the routing setup <span aria-hidden="true">→</span></span>
+            </a>
+            <a class="ecosystem-card" href="./support/integrations.html#recipes">
+              <span class="ecosystem-purpose">Use existing protocols</span>
+              <h3>Cline, Phoenix <span>+ GitHub MCP</span></h3>
+              <p>Connect an MCP caller, choose an OTLP receiver or configure an outgoing tool connector.</p>
+              <span class="ecosystem-scope">Configuration recipes · separate setup checks</span>
+              <span class="ecosystem-action">Browse the recipes <span aria-hidden="true">→</span></span>
+            </a>
+          </div>
+          <p class="ecosystem-note">Each guide explains setup, tested scope and limits. Caller and UI examples are source-checkout code; trace and connector recipes use existing protocol support. Explore the <a href="./support/sdk-integration.html">framework runner profiles</a> or the separate <a href="./support/integrations.html#experimental">OpenShell sandbox experiment</a>.</p>
         </div>
       </section>
 

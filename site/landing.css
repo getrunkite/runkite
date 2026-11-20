@@ -70,6 +70,26 @@ h1 em, .demo-section h2 em { color: var(--accent-2); font-weight: 500; }
 .section-heading { max-width: 40rem; margin-bottom: 2.5rem; }
 h2 { font: 500 clamp(2.05rem, 3.4vw, 3rem)/1.15 var(--font-display); letter-spacing: -.035em; margin: 0 0 1.2rem; }
 .section-heading > p:not(.eyebrow) { color: #a7a5a2; font-size: 1rem; line-height: 1.7; max-width: 35rem; }
+.ecosystem { padding-block: 4.5rem; }
+.ecosystem-heading { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem 3rem; margin-bottom: 2rem; }
+.ecosystem-heading .section-heading { margin-bottom: 0; max-width: 43rem; }
+.ecosystem-heading .section-heading > p:not(.eyebrow) { max-width: 42rem; margin-bottom: 0; }
+.ecosystem-heading > .inline-link { flex: none; padding-block: .5rem; }
+.ecosystem .eyebrow { font-size: .875rem; }
+.ecosystem-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; border: 1px solid #3b3730; background: #3b3730; }
+.ecosystem-card { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 1.5rem; color: var(--ink); background: #111112; text-decoration: none; }
+.ecosystem-card:hover, .ecosystem-card:focus-visible { background: #1d1912; color: var(--ink); }
+.ecosystem-card:focus-visible { position: relative; z-index: 1; outline-offset: -3px; }
+.ecosystem-purpose { font: .875rem/1.6 var(--font-mono); color: #c6b391; }
+.ecosystem-card h3 { margin: .75rem 0 .85rem; font-size: 1.45rem; line-height: 1.35; font-weight: 500; letter-spacing: -.02em; }
+.ecosystem-card h3 > span { color: #bbb6ae; }
+.ecosystem-card p { margin: 0 0 1.3rem; color: #bbb6ae; font-size: 1rem; line-height: 1.7; }
+.ecosystem-scope { margin-top: auto; padding-top: .8rem; border-top: 1px solid #35312b; width: 100%; font-size: .875rem; line-height: 1.6; color: #b6afa3; }
+.ecosystem-action { display: inline-flex; align-items: center; gap: .8rem; margin-top: .85rem; color: var(--accent-2); font-size: .9rem; line-height: 1.6; }
+.ecosystem-card:hover .ecosystem-action, .ecosystem-card:focus-visible .ecosystem-action { text-decoration: underline; text-underline-offset: .25rem; }
+.ecosystem-note { margin: 1.25rem 0 0; max-width: 68rem; color: #aaa59d; font-size: .875rem; line-height: 1.8; }
+@media (max-width: 900px) { .ecosystem-heading { flex-direction: column; align-items: flex-start; gap: 1rem; } .ecosystem-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .ecosystem { padding-block: 3rem; } .ecosystem-grid { grid-template-columns: minmax(0, 1fr); } .ecosystem-card { padding: 1.25rem; } }
 .packages .section-heading { margin-bottom: 1.8rem; }
 .package-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .package-card { display: flex; flex-direction: column; min-width: 0; padding: 1.35rem; border: 1px solid #323132; border-top: 2px solid var(--accent); background: #101011; }

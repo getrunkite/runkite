@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="theme-color" content="#0a0a0b" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Integrations · Runkite Docs</title>
+    <meta name="description" content="Connect your agent frameworks, MCP callers, chat interfaces, evaluations, model routing and tracing to Runkite. Choose a use case and follow its setup guide." />
+    <link rel="canonical" href="https://getrunkite.com/support/integrations.html" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='2' fill='%230a0a0b'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-family='monospace' font-size='12' font-weight='700' fill='%23f5a524'%3ERK%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./support.css?v=20261120-integrations" />
+  </head>
+  <body>
+    <a class="docs-skip" href="#main-content">Skip to content</a>
+    <div class="layout">
+      <aside class="sidebar">
+        <a class="brand" href="../">run<span>kite</span></a>
+        <p class="brand-sub">docs</p>
+                                        <nav>
+          <div class="nav-group">Start</div>
+          <a  href="./">Overview</a>
+          <a  href="try.html">Try it</a>
+          <a  href="admin-login.html">Admin login</a>
+          <a href="admin-guide.html">Admin UI guide</a>
+          <a  href="credentials.html">Credentials map</a>
+          <a  href="why.html">Why a plane</a>
+          <a  href="scenario.html">Scenario</a>
+          <div class="nav-group">Build</div>
+          <a  href="install.html">Install</a>
+          <a  href="production.html">Production day-0</a>
+          <a  href="first-agent.html">First agent</a>
+          <a  href="agents.html">Agents (Py / JS)</a>
+          <a  href="migrate-agents.html">Migrate agents</a>
+          <a  href="frameworks.html">Framework matrix</a>
+          <a href="sdk-integration.html">SDK integrations</a>
+          <a  href="checkpoints.html">Checkpoints</a>
+          <a  href="connectors.html">Connectors</a>
+          <a  href="registry.html">Registry</a>
+          <div class="nav-group">Operate</div>
+          <a  href="runs.html">Runs &amp; threads</a>
+          <a href="cron.html">Cron</a>
+          <a  href="webhooks.html">Webhooks</a>
+          <a  href="ops.html">Ops</a>
+          <a  href="runner-auth.html">Runner auth</a>
+          <a  href="secrets.html">Secrets</a>
+          <div class="nav-group">Govern</div>
+          <a  href="grants.html">Grants &amp; HITL</a>
+          <a href="connector-actions.html">Connector actions</a>
+          <a href="tenant-review.html">Tenant review</a>
+          <a href="security-completion.html">Security operations (v0.7.0)</a>
+          <a href="security-identity.html">Identity and usage (v0.8.0)</a>
+          <a  href="sim.html">Fixture replay</a>
+          <a  href="hitl-ops.html">HITL ops</a>
+          <a  href="policy.html">PDP / Cedar</a>
+          <a  href="run-manifest.html">Run manifest</a>
+          <a  href="kill.html">Kill &amp; break-glass</a>
+          <a  href="security.html">Security</a>
+          <a  href="multi-tenant.html">Multi-tenant keys</a>
+          <a  href="finops.html">Spend (FinOps)</a>
+          <div class="nav-group">Connect</div>
+          <a class="active" href="integrations.html" aria-current="page">Integrations</a>
+          <a  href="a2a.html">A2A coordination</a>
+          <a  href="protocol.html">Protocols</a>
+          <div class="nav-group">Deep</div>
+          <a  href="feature-map.html">Feature map</a>
+          <a  href="chapters/">Chapters</a>
+          <a  href="blog/">Blog</a>
+          <a  href="decisions/">Decisions</a>
+          <a href="./engineering.html">Engineering</a>
+          <a  href="limitations.html">Limitations</a>
+        </nav>
+      </aside>
+      <main class="main" id="main-content" tabindex="-1">
+        <div class="topbar"><a href="../">← Product</a><a href="https://github.com/getrunkite/runkite">GitHub</a></div>
+        <p class="kicker">Ecosystem integrations</p>
+        <h1>Connect Runkite to your stack.</h1>
+        <p class="lede">Keep the tools your team already uses. Run agents from your preferred framework, call a specialist from another app, test its answers, or follow its traces in your own observability backend.</p>
+        <p>Choose the job you need below. Each guide explains who owns execution, how to connect, and what was tested. Runkite stays self-hosted; the other project keeps its own application, runtime and storage.</p>
+
+        <nav class="integration-jumps" aria-label="Integration use cases">
+          <a href="#managed">Run agents</a>
+          <a href="#callers">Call specialists</a>
+          <a href="#evaluation">Evaluate answers</a>
+          <a href="#interfaces">Connect chat</a>
+          <a href="#tracing">Export traces</a>
+          <a href="#routing">Route models</a>
+        </nav>
+
+        <section class="integration-start" aria-labelledby="start">
+          <h2 id="start">Start with one working connection.</h2>
+          <ol class="steps">
+            <li><strong>Choose the execution boundary.</strong> For caller and chat integrations, first <a href="try.html#first-run">complete a local echo run</a>. If your application keeps its model loop, use <a href="sdk-integration.html#app-owned">tool decisions</a> instead of moving the whole app.</li>
+            <li><strong>Follow one setup guide.</strong> It identifies the package, checkout example or external service you need. Keep plane credentials in a trusted backend and give the caller only the required authority.</li>
+            <li><strong>Verify your deployment.</strong> Run the guide's smoke or qualification command. Inspect the matching managed run in Admin, or confirm trace persistence in the receiver. Add your own agent, model and infrastructure after that first success.</li>
+          </ol>
+        </section>
+
+        <h2>Find the connection that fits your use case.</h2>
+        <p class="integration-availability"><strong>What the labels mean:</strong> published runner profiles are installed from packages. Checkout examples are application code you copy or adapt from the source. Configuration recipes connect existing protocol support. Experimental fixtures qualify a narrower boundary. Upgrading Runkite does not install every example.</p>
+
+        <div class="integration-directory">
+          <article class="integration-entry" aria-labelledby="managed">
+            <p class="integration-kind">Published runner profiles</p>
+            <h3 id="managed">Run your framework through Runkite.</h3>
+            <p class="integration-products">LangGraph / LangGraph.js · Vercel AI SDK · Microsoft Agent Framework · OpenAI Agents SDK · Pydantic AI · Google ADK</p>
+            <p>Your app creates a managed thread and run. A separate Python or TypeScript runner executes the SDK's model loop while Runkite handles admission, dispatch, durable run records and operational controls.</p>
+            <p class="integration-limit">Use the profile matrix for supported tools, conversation state and resume limits. Local tools receive connector policy only when they call through the connector path.</p>
+            <p class="integration-links"><a href="sdk-integration.html#execution-boundary">Choose a runner and install it</a><a href="frameworks.html">Compare profile capabilities</a></p>
+          </article>
+
+          <article class="integration-entry" aria-labelledby="callers">
+            <p class="integration-kind">Checkout caller examples</p>
+            <h3 id="callers">Call one specialist from another agent.</h3>
+            <p class="integration-products">Langflow · Trinity · MCP clients</p>
+            <p>Keep the surrounding conversation and model loop in the caller. Invoke a configured Runkite agent through the public <code>/mcp</code> interface, creating an ordinary managed run for that specialist.</p>
+            <p class="integration-limit">Langflow's pinned headless client is qualified, not its complete visual-editor experience. Trinity's bridge and source configuration are tested; a full native Trinity deployment remains unqualified. Preserve operation intent before retrying.</p>
+            <p class="integration-links"><a href="langflow.html">Connect Langflow MCP Tools</a><a href="protocol.html#trinity-caller">Set up the Trinity bridge</a></p>
+          </article>
+
+          <article class="integration-entry" aria-labelledby="evaluation">
+            <p class="integration-kind">Checkout evaluation provider</p>
+            <h3 id="evaluation">Test an agent before changing it.</h3>
+            <p class="integration-products">promptfoo</p>
+            <p>Rerun known questions after a prompt, model or agent change. The provider submits each intentional evaluation as a Runkite-managed run, waits for the durable result, and returns the answer to promptfoo's assertions. Inspect the execution in Admin when a test fails.</p>
+            <p class="integration-limit">The native CLI path is qualified with a scripted worker. The bundled test is a smoke test, not an adversarial security suite. Automated red-team strategies and checks proving connector denials or actual tool side effects are not qualified.</p>
+            <p class="integration-links"><a href="promptfoo.html">Configure the evaluation provider</a><a href="https://github.com/getrunkite/runkite/tree/main/examples/promptfoo">Get the example and qualification commands</a></p>
+          </article>
+
+          <article class="integration-entry" aria-labelledby="interfaces">
+            <p class="integration-kind">Checkout application bridges</p>
+            <h3 id="interfaces">Keep your chat UI. Use managed runs.</h3>
+            <p class="integration-products">AI SDK UI · Next / Nuxt · AG-UI</p>
+            <p>Connect an authenticated application route to Runkite-managed execution. Stream text to your existing interface, detach and reattach to a retained run, and expose an explicit Stop action.</p>
+            <p class="integration-limit">Your app owns authentication, chat history and run ownership. AG-UI is a plain-text transport slice, not complete tool, interrupt or multimodal support and not a qualified CopilotKit widget.</p>
+            <p class="integration-links"><a href="sdk-integration.html#managed-ui">Build an AI SDK UI route</a><a href="sdk-integration.html#managed-ag-ui">Use the AG-UI text bridge</a></p>
+          </article>
+
+          <article class="integration-entry" aria-labelledby="tracing">
+            <p class="integration-kind">OTLP configuration recipe</p>
+            <h3 id="tracing">Follow execution in your trace backend.</h3>
+            <p class="integration-products">Langfuse · OpenTelemetry receivers</p>
+            <p>Point the existing plane and runner exporters at your receiver. The Langfuse guide covers authentication, HTTP encoding and verifying that operational spans actually persist in a separately deployed backend.</p>
+            <p class="integration-limit">A real Langfuse receiver was qualified. The path does not automatically record prompt bodies or populate generation, cost, score or user/session mappings. Logs remain separate from traces.</p>
+            <p class="integration-links"><a href="langfuse.html">Configure Langfuse and verify traces</a><a href="https://github.com/getrunkite/runkite/blob/main/docs/api.md#distributed-tracing-opentelemetry">Read the exporter reference</a></p>
+          </article>
+
+          <article class="integration-entry" aria-labelledby="routing">
+            <p class="integration-kind">Published external walkthrough</p>
+            <h3 id="routing">Choose models behind the agent's SDK.</h3>
+            <p class="integration-products">vLLM Semantic Router</p>
+            <p>Run an AI SDK agent through Runkite and point the runner's OpenAI-compatible model client at Semantic Router. The router selects among your configured model backends while Runkite manages the agent run.</p>
+            <p class="integration-limit">The model request travels from the runner to Semantic Router. Runkite does not proxy model traffic or choose models. The runnable example lives in the published walkthrough, outside this repository.</p>
+            <p class="integration-links"><a href="https://vllm-sr.ai/blog/runkite-ai-sdk-semantic-router/">Read One Conversation, Multiple Models</a><a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md#vllm-semantic-router-routes-the-runners-model-calls">Review the protocol boundary</a></p>
+          </article>
+        </div>
+
+        <h2 id="recipes">More connections through existing protocols.</h2>
+        <p>These are configuration recipes with their own validation scope, separate from the native application qualifications above.</p>
+        <ul class="links">
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md#cline-calls-runkite-over-mcp">Cline over MCP</a>: configure Streamable HTTP and a dedicated caller key to expose authorized Runkite agents as tools.</li>
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md#deep-agents-uses-the-langgraph-runner">Deep Agents through LangGraph</a>: load the compiled graph with the existing runner. Native subagents do not automatically become separate plane runs.</li>
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md#phoenix-receives-existing-otlp-traces">Phoenix over OTLP</a>: configure existing exporters and verify a connected trace in your own receiver. No Phoenix-specific native qualification is claimed.</li>
+          <li><a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md#github-mcp-server-is-an-external-connector">GitHub MCP Server as a connector</a>: keep the server external and use Runkite's outbound connector gate, grants and credential injection. Protocol tests do not establish live GitHub-service qualification.</li>
+        </ul>
+
+        <section class="integration-experiment" aria-labelledby="experimental">
+          <p class="integration-kind">Experimental execution fixture</p>
+          <h2 id="experimental">OpenShell: qualify an external boundary.</h2>
+          <p>The checkout includes an external OpenShell workload and an effective-policy checker fixture. This is separate from ordinary framework runners. It does not automatically sandbox them or add a production enforcement gate.</p>
+          <p><a href="security-completion.html#effective-policy">Understand the tested policy boundary</a> and use the linked engineering qualification commands before experimenting.</p>
+        </section>
+
+        <h2>What these integrations establish.</h2>
+        <p>Each connection uses an existing public boundary: a runner, REST, MCP, chat transport or OTLP. The linked guides record the pinned versions and tests. A qualified slice does not establish support for every upstream feature, production adoption or a partnership.</p>
+        <p class="note">For implementation and test evidence, see the <a href="https://github.com/getrunkite/runkite/blob/main/docs/integrations.md">source integration guide</a> and <a href="engineering.html#current-source">engineering and qualification map</a>. Missing an integration? <a href="https://github.com/getrunkite/runkite/issues/new/choose">Describe your caller and the operation it needs</a>.</p>
+      </main>
+    </div>
+    <script src="./docs.js?v=20261108-final" defer></script>
+  </body>
+</html>
