@@ -15,6 +15,7 @@ Visuals live in `assets/`.
 - [`/`](./index.html), product landing
 - [`/support/try.html`](./support/try.html), try path
 - [`/support/`](./support/). Docs handbook (catalog + feature guides + chapters + decisions)
+- [`/support/integrations.html`](./support/integrations.html), ecosystem use cases, setup paths and tested scope
 - [`/support/sdk-integration.html`](./support/sdk-integration.html), execution ownership and SDK integration paths
 - [`/design/`](./design/), engineering notes hub (fencing, subscribe-before-enqueue, createRunCtx, poison pill)
 - [`/admin/`](https://getrunkite.com/admin/), retained public Admin availability route
@@ -148,6 +149,21 @@ publisher logo and its source/license notice live in `assets/`; preserve that
 attribution when updating the artwork. Framework names link to their individual
 contracts in the SDK guide. The "Bring your framework" introduction opens that
 guide too.
+
+The homepage's "Works with your stack" section links to the public integrations
+hub and named support recipes. Explain the task each connection enables, not
+just the project name: evaluate a managed agent, call a specialist, deliver
+chat, export traces or route model requests. Keep the hub reachable from the
+docs catalog as well as the homepage. Its role is discovery, not a second
+copy of each integration's setup instructions or qualification history.
+
+Keep availability visible beside the claim. A published runner, a checkout
+caller example, a configuration recipe and an experimental workload fixture
+are different deliverables. Third-party names describe interoperability, not
+endorsement or adoption. In particular, the promptfoo provider qualifies the
+ordinary evaluator path with a scripted worker. Its bundled `ready` smoke test
+does not establish automated red-team coverage or verify actual tool effects.
+Link to the task guide for setup and to source records for the precise evidence.
 
 Use the same visible destination cues on homepage action links and framework
 profiles: `→` for another site page, `↗` for an external destination, and `↓` for

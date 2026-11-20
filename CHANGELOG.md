@@ -4,6 +4,12 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+- Make ecosystem integrations discoverable from the homepage and a public
+  support hub, with task-oriented links to existing setup guides and explicit
+  package, checkout, recipe and experimental boundaries. Clarify that the
+  promptfoo smoke test qualifies ordinary evaluation delivery, not a complete
+  red-team assessment. No runtime or package availability changes.
+
 - Align the Microsoft governance example with the public `@tool` decorator and
   verify model-facing parameters, defaults and governance outcomes in streaming
   and non-streaming calls. The pinned SDK already infers parameters for the

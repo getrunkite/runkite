@@ -17,7 +17,7 @@ tool calls. Your framework still owns the model loop.
 Current source and v0.6.1+ downloads are Apache-2.0. Published v0.6.0 downloads retain BUSL-1.1.
 See [license scope](#license).
 
-**[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Documentation](https://getrunkite.com/support/)** · **[Demo guide](https://getrunkite.com/support/try.html)**
+**[Quick start](#quick-start)** · **[Choose your integration](#choose-an-integration-path)** · **[Integrations](https://getrunkite.com/support/integrations.html)** · **[Documentation](https://getrunkite.com/support/)** · **[Demo guide](https://getrunkite.com/support/try.html)**
 
 **[v0.10.0](https://github.com/getrunkite/runkite/releases/tag/v0.10.0) requires a coordinated upgrade:** back up and drain all writers, apply Postgres/SQLite migration 23 or MySQL migration 24, and deploy matching protocol-1 planes and runners. Reconcile legacy accounting, hook claims and ambiguous receipts before restoring traffic. Follow the [upgrade sequence](docs/internal/release-candidate-v0100.md#upgrade-sequence). Kafka requires an explicit non-atomic compatibility opt-in, even with Redis.
 
@@ -197,6 +197,12 @@ For a runnable model-routing integration, read
 [One Conversation, Multiple Models: Runkite and vLLM Semantic Router](https://vllm-sr.ai/blog/runkite-ai-sdk-semantic-router/).
 The managed AI SDK runner keeps its native loop, Runkite operates the run, and
 Semantic Router selects among configured model backends.
+
+Connect the rest of your stack through the [integrations guide](https://getrunkite.com/support/integrations.html):
+evaluate managed agents with promptfoo, call specialists from Langflow, deliver
+chat through AG-UI, or export traces to Langfuse. Start with the task, then follow
+its setup and tested scope. Caller examples remain checkout assets; a working
+protocol connection does not qualify every feature of the surrounding product.
 
 ## Quick start
 

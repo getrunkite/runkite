@@ -61,6 +61,7 @@
           <a  href="multi-tenant.html">Multi-tenant keys</a>
           <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Connect</div>
+          <a href="integrations.html">Integrations</a>
           <a  href="a2a.html">A2A coordination</a>
           <a  href="protocol.html">Protocols</a>
           <div class="nav-group">Deep</div>
@@ -81,6 +82,10 @@
         <p class="kicker">Connect · v0.10.0 checkout example</p>
         <h1>Evaluate managed runs with promptfoo</h1>
         <p class="lede">A custom API provider for promptfoo 0.125.1 creates ordinary Runkite managed runs and observes their durable results. The example is available in the v0.10.0 source checkout and is not installed by the registry packages.</p>
+
+        <h2 id="use-case">Check an agent before changing it</h2>
+        <p>Suppose your team is changing a support agent's model or system prompt. Keep a set of representative questions and expected results in promptfoo, then run them against the managed agent. Each evaluation creates a real Runkite thread and run; promptfoo checks the returned answer while Admin retains the corresponding execution record. Your team chooses the assertions and can use the results in its own deployment checks.</p>
+        <p>The bundled <code>ready</code> assertion is a connection smoke test, not a security assessment. You can supply fixed adversarial inputs as ordinary evaluation cases, but automated red-team strategies are not qualified by this example. An answer saying an action was refused does not prove that no tool executed. Verifying connector denial, human approval or side effects requires additional checks against the relevant records or a controlled tool backend.</p>
         <p class="note"><strong>Qualified scope:</strong> the pinned custom class loader, ordinary evaluator scheduler and CLI, using Node 26.11.0. The local qualification ran four evaluations as four distinct managed runs with a scripted worker and local equality assertions. It made no model calls. Real agent evaluations use the agent's configured model and tool budget.</p>
 
         <h2 id="setup">Use the checkout example</h2>

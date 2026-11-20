@@ -3,6 +3,13 @@
 These integrations keep Runkite as a self-hosted operational plane. Other
 projects retain their clients, agent loops and observability backends.
 
+Start with the [public integrations guide](https://getrunkite.com/support/integrations.html)
+to choose a task and follow its setup: evaluate agents, call a specialist,
+connect a chat UI, export traces or route model requests. That guide links the
+existing support pages and distinguishes published runtime features, checkout
+examples, configuration recipes and experimental fixtures. This source guide
+records the underlying contracts and qualification evidence.
+
 <a id="unreleased-current-source"></a>
 
 ## v0.10.0 integrations
@@ -107,7 +114,11 @@ Choose the caller or presentation boundary:
   silently dispatches replacement work. Broad read/write and scoped run/observe
   profiles passed separately, including reference-pinned waits and scoped
   denial probes. Local qualification uses a scripted worker and local assertions,
-  not a real model or every evaluator strategy.
+  not a real model or every evaluator strategy. The bundled `ready` assertion is
+  a connection smoke test. Automated red-team strategies are not qualified, and
+  an output assertion alone does not prove a connector denial or absence of a
+  tool side effect; those need checks against the relevant evidence or a
+  controlled tool backend.
 - [AG-UI text transport](../examples/managed_ag_ui/README.md) presents an existing
   managed run through an application route and the official encoder/client.
   It reuses the shared bridge's ownership, durable finish, attempt, retained

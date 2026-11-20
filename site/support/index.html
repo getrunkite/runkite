@@ -10,7 +10,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./support.css?v=20261108-final" />
+    <link rel="stylesheet" href="./support.css?v=20261120-integrations" />
   </head>
   <body>
     <a class="docs-skip" href="#main-content">Skip to content</a>
@@ -60,6 +60,7 @@
           <a  href="multi-tenant.html">Multi-tenant keys</a>
           <a  href="finops.html">Spend (FinOps)</a>
           <div class="nav-group">Connect</div>
+          <a href="integrations.html">Integrations</a>
           <a  href="a2a.html">A2A coordination</a>
           <a  href="protocol.html">Protocols</a>
           <div class="nav-group">Deep</div>
@@ -83,6 +84,12 @@
           how it looks in Admin, and what you should expect. Reference markdown still lives in
           <code>docs/</code> on GitHub, these pages are the product guide.
         </p>
+
+        <div class="card integration-docs-intro">
+          <strong>Connect the tools you already use.</strong>
+          <p>Evaluate agents with promptfoo, call a specialist from Langflow, keep your chat UI with AG-UI or AI SDK UI, export traces to Langfuse, or route model calls through vLLM Semantic Router.</p>
+          <p><a href="integrations.html">Explore integrations, setup guides and tested boundaries</a>. Published runner profiles, checkout examples and configuration recipes are labeled separately.</p>
+        </div>
 
         <p class="note">Choose your execution boundary first: <a href="./sdk-integration.html#execution-boundary">managed Threads/Runs or app-owned tool decisions</a>. The guide covers the v0.10.0 runner profiles, checkout chat/reconnect and scripted governance examples, and separately published decision helpers.</p>
 
@@ -173,6 +180,7 @@
 
         <h2>Connect</h2>
         <ul class="links">
+          <li><a href="integrations.html">Integrations</a>: choose a use case, then follow its public setup guide and qualification evidence.</li>
           <li><a href="./a2a.html">A2A coordination</a>: agent calls agent via the plane</li>
           <li><a href="./protocol.html">Protocols</a>: Agent Protocol vs Runner Protocol</li>
         </ul>

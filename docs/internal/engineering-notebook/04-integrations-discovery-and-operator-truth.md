@@ -204,6 +204,35 @@ availability. If an operator needed proof of every skipped or attempted fire,
 the design would need durable per-occurrence identity and outcome recording;
 neither another history query nor a countdown supplies it.
 
+## Make integration paths discoverable
+
+The later public presentation follows the same boundaries as the v0.10.0
+implementation. An engineer asking how to test an agent or connect an existing
+chat UI should not have to infer the answer from a release note or a list of
+frameworks. The homepage now introduces those jobs in "Works with your stack";
+the [public integrations hub](../../../site/support/integrations.html) sends
+the reader to the existing task guide, example and qualification evidence.
+The [source integration guide](../../integrations.md) remains the detailed
+contract map. Static HTML is published separately from Markdown, so editing a
+source note alone does not update what a website visitor sees.
+
+The distinction matters for promptfoo. `RunkiteProvider.callApi` submits an
+ordinary managed run; its observation path returns final output to the
+evaluator. The bundled configuration's equality assertion expects `ready`.
+The real CLI qualification checks that connection with a scripted worker.
+It does not run a full automated red-team campaign or inspect the audit log to
+prove that a forbidden connector action never executed. A security-oriented
+scenario would need those additional observations or a controlled tool backend.
+Describing it as "evaluate a managed agent" communicates its current value
+without turning a transport test into a security verdict.
+
+Published runtime features, checkout examples, configuration recipes and
+experimental fixtures are labeled separately in the public path. This avoids
+implying that installing a runner installs another product, that a native-client
+test covers its entire UI, or that interoperability is a partnership. A new
+integration should add a discoverable task and link the narrow evidence, rather
+than place an unqualified logo beside a universal support claim.
+
 ## Presentation must not strengthen the evidence
 
 The same rule guides Run Detail. [`finalAnswerPreview`](../../../admin-ui/src/lib/finalAnswerPreview.ts)
