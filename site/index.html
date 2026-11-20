@@ -24,7 +24,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./brand.css?v=20260925" />
-    <link rel="stylesheet" href="./landing.css?v=20261120-ecosystem" />
+    <link rel="stylesheet" href="./landing.css?v=20261120-integration-marks" />
     <link rel="stylesheet" href="./execution-flow.css?v=20261108-playback" />
     <script src="./landing.js?v=20261108-playback" defer></script>
     <script src="./product-tour.js?v=20261118-product" defer></script>
@@ -109,6 +109,10 @@
           </div>
           <div class="ecosystem-grid">
             <a class="ecosystem-card" href="./support/promptfoo.html">
+              <span class="ecosystem-visual">
+                <span class="ecosystem-marks" aria-hidden="true"><span class="ecosystem-mark ecosystem-mark--light"><img src="./assets/integrations/promptfoo.svg" alt="" width="36" height="36" loading="lazy" /></span></span>
+                <span class="ecosystem-wire" aria-hidden="true"></span><span class="ecosystem-transport">REST</span>
+              </span>
               <span class="ecosystem-purpose">Evaluate agent behaviour</span>
               <h3>promptfoo</h3>
               <p>Send test cases through managed runs and check the returned answers before changing your agent.</p>
@@ -116,6 +120,10 @@
               <span class="ecosystem-action">Set up evaluations <span aria-hidden="true">→</span></span>
             </a>
             <a class="ecosystem-card" href="./support/integrations.html#callers">
+              <span class="ecosystem-visual">
+                <span class="ecosystem-marks" aria-hidden="true"><span class="ecosystem-mark ecosystem-mark--light"><img src="./assets/integrations/langflow.svg" alt="" width="36" height="36" loading="lazy" /></span><span class="ecosystem-mark"><img src="./assets/integrations/trinity.svg" alt="" width="36" height="36" loading="lazy" /></span></span>
+                <span class="ecosystem-wire" aria-hidden="true"></span><span class="ecosystem-transport">MCP</span>
+              </span>
               <span class="ecosystem-purpose">Call a specialist</span>
               <h3>Langflow <span>+ Trinity</span></h3>
               <p>Keep the surrounding workflow and invoke a Runkite-managed agent as an MCP tool.</p>
@@ -123,6 +131,10 @@
               <span class="ecosystem-action">Choose an MCP caller <span aria-hidden="true">→</span></span>
             </a>
             <a class="ecosystem-card" href="./support/integrations.html#interfaces">
+              <span class="ecosystem-visual">
+                <span class="ecosystem-marks" aria-hidden="true"><span class="ecosystem-mark ecosystem-mark--light"><img src="./assets/integrations/ag-ui.svg" alt="" width="36" height="36" loading="lazy" /></span><span class="ecosystem-mark ecosystem-mark--light"><img src="./assets/integrations/ai-sdk.svg" alt="" width="36" height="36" loading="lazy" /></span></span>
+                <span class="ecosystem-wire" aria-hidden="true"></span><span class="ecosystem-transport">Text stream</span>
+              </span>
               <span class="ecosystem-purpose">Connect your chat UI</span>
               <h3>AG-UI <span>+ AI SDK UI</span></h3>
               <p>Present managed text responses in your app, with retained replay, reconnect and explicit Stop.</p>
@@ -130,6 +142,10 @@
               <span class="ecosystem-action">Connect a frontend <span aria-hidden="true">→</span></span>
             </a>
             <a class="ecosystem-card" href="./support/integrations.html#tracing">
+              <span class="ecosystem-visual">
+                <span class="ecosystem-marks" aria-hidden="true"><span class="ecosystem-mark ecosystem-mark--light"><img src="./assets/integrations/langfuse.svg" alt="" width="36" height="36" loading="lazy" /></span><span class="ecosystem-mark ecosystem-mark--light"><img src="./assets/integrations/opentelemetry.svg" alt="" width="36" height="36" loading="lazy" /></span></span>
+                <span class="ecosystem-wire" aria-hidden="true"></span><span class="ecosystem-transport">OTLP</span>
+              </span>
               <span class="ecosystem-purpose">Follow the traces</span>
               <h3>Langfuse <span>+ OTLP backends</span></h3>
               <p>Send operational spans to your own observability backend using the existing OTLP exporters.</p>
@@ -137,6 +153,10 @@
               <span class="ecosystem-action">Configure trace export <span aria-hidden="true">→</span></span>
             </a>
             <a class="ecosystem-card" href="./support/integrations.html#routing">
+              <span class="ecosystem-visual">
+                <span class="ecosystem-marks" aria-hidden="true"><span class="ecosystem-mark ecosystem-mark--wide"><img src="./assets/vllm-semantic-router-logo.png" alt="" width="1508" height="620" loading="lazy" /></span></span>
+                <span class="ecosystem-wire" aria-hidden="true"></span><span class="ecosystem-transport">Model API</span>
+              </span>
               <span class="ecosystem-purpose">Route model requests</span>
               <h3>vLLM Semantic Router</h3>
               <p>Let the runner's model client use Semantic Router while Runkite manages the agent's execution.</p>
@@ -144,6 +164,10 @@
               <span class="ecosystem-action">Explore the routing setup <span aria-hidden="true">→</span></span>
             </a>
             <a class="ecosystem-card" href="./support/integrations.html#recipes">
+              <span class="ecosystem-visual">
+                <span class="ecosystem-marks" aria-hidden="true"><span class="ecosystem-mark"><img src="./assets/integrations/cline.svg" alt="" width="36" height="36" loading="lazy" /></span><span class="ecosystem-mark ecosystem-mark--phoenix"><img src="./assets/integrations/phoenix.svg" alt="" width="24" height="24" loading="lazy" /></span><span class="ecosystem-mark"><img src="./assets/integrations/github.svg" alt="" width="36" height="36" loading="lazy" /></span></span>
+                <span class="ecosystem-wire" aria-hidden="true"></span><span class="ecosystem-transport">MCP / OTLP</span>
+              </span>
               <span class="ecosystem-purpose">Use existing protocols</span>
               <h3>Cline, Phoenix <span>+ GitHub MCP</span></h3>
               <p>Connect an MCP caller, choose an OTLP receiver or configure an outgoing tool connector.</p>

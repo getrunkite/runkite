@@ -233,6 +233,14 @@ test covers its entire UI, or that interoperability is a partnership. A new
 integration should add a discoverable task and link the narrow evidence, rather
 than place an unqualified logo beside a universal support claim.
 
+The visual follow-up uses the projects' own unmodified marks as recognition
+cues, next to the connection's protocol. The logos are local image assets,
+not third-party embeds. Visible names and the card's single link remain usable
+without the artwork. Source revisions, hashes and original notices live in
+`site/assets/integrations/`. The marks do not replace availability labels or
+turn model routing into traffic through the plane. This is a visual index of
+different contracts, not a universal execution topology.
+
 ## Presentation must not strengthen the evidence
 
 The same rule guides Run Detail. [`finalAnswerPreview`](../../../admin-ui/src/lib/finalAnswerPreview.ts)

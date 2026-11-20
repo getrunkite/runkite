@@ -157,6 +157,16 @@ chat, export traces or route model requests. Keep the hub reachable from the
 docs catalog as well as the homepage. Its role is discovery, not a second
 copy of each integration's setup instructions or qualification history.
 
+Integration cards use official, unmodified marks with protocol labels and
+one native link per card. Keep the visible project names as text; the adjacent
+logos are decorative and must not add repeated screen-reader labels or focus
+targets. Use the supplied light or dark variant with enough clear space and
+preserve its aspect ratio and colors. Host assets locally, not from a logo CDN.
+`assets/integrations/NOTICE.txt` and `sources.json` retain ownership, original
+notices, exact source revisions and hashes. These are interoperability marks,
+not partner badges. Protocol labels describe the documented connection; they
+do not imply that model traffic passes through the control plane.
+
 Keep availability visible beside the claim. A published runner, a checkout
 caller example, a configuration recipe and an experimental workload fixture
 are different deliverables. Third-party names describe interoperability, not
