@@ -6,15 +6,18 @@ on:
     paths:
       - "site/**"
       - "scripts/check-doc-links.py"
+      - "scripts/wait_pages_artifact.py"
+      - "scripts/test_wait_pages_artifact.py"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   pages: write
   id-token: write
 
-# Do not cancel in-progress deploys — overlapping cancels were leaving
+# Do not cancel in-progress deploys. Overlapping cancels were leaving
 # GitHub Pages stuck ("Deployment cancelled") on this repo.
 concurrency:
   group: pages
@@ -26,14 +29,33 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    env:
+      PAGES_ARTIFACT_NAME: github-pages-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Test Pages artifact visibility gate
+        run: python3 -m unittest discover -s scripts -p test_wait_pages_artifact.py
       - name: Check public documentation links
         run: python3 scripts/check-doc-links.py
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+      - id: upload
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
+          name: ${{ env.PAGES_ARTIFACT_NAME }}
           path: site
+      - name: Wait for uploaded Pages artifact metadata
+        timeout-minutes: 2
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAGES_ARTIFACT_ID: ${{ steps.upload.outputs.artifact_id }}
+        run: >-
+          python3 scripts/wait_pages_artifact.py
+          --repository "$GITHUB_REPOSITORY"
+          --run-id "$GITHUB_RUN_ID"
+          --artifact-id "$PAGES_ARTIFACT_ID"
+          --artifact-name "$PAGES_ARTIFACT_NAME"
       - id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+        with:
+          artifact_name: ${{ env.PAGES_ARTIFACT_NAME }}
         # timeout max is 600000ms (action warning if higher)
