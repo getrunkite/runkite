@@ -231,7 +231,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Retain intended distributions and integrity manifest
         if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pypi-${{ matrix.package }}-${{ github.ref_name }}
           path: ${{ steps.artifact.outputs.artifact_dir }}
@@ -339,7 +339,7 @@ jobs:
         run: python scripts/release_artifacts.py check "$ARTIFACT_DIR/manifest.json" --require-present --wait-seconds 300
       - name: Retain original distributions and verification identity
         if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: pypi-recovery-${{ matrix.package }}-${{ needs.recovery-source.outputs.tag }}-${{ github.run_id }}
           path: ${{ env.ARTIFACT_DIR }}
@@ -483,7 +483,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Retain verified tarball and integrity manifest
         if: ${{ !cancelled() && steps.artifact.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-${{ matrix.package }}-${{ env.RELEASE_TAG }}-${{ github.run_id }}
           path: ${{ steps.artifact.outputs.artifact_dir }}
