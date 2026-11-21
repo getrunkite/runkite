@@ -4,6 +4,11 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+- Make Pages deployments use one artifact name per workflow attempt and wait
+  briefly for the uploaded artifact's metadata before deployment. Retrying a
+  failed job no longer collides with an artifact retained from its first attempt.
+  Deployment errors remain blocking; no runtime or package release is required.
+
 - Add official integration artwork and protocol labels to the homepage cards,
   with local assets, source provenance and original notices. Preserve the
   existing setup links, availability labels and keyboard navigation.

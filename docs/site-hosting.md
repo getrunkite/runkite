@@ -30,6 +30,31 @@ It cannot run the Go binary, Postgres, Redis or runners, and cannot provide thei
 SSE, WebSocket or gRPC backend services. Keep the existing
 [self-hosted deployment instructions](deployment.md) for those processes.
 
+### Pages artifact visibility and retries
+
+Every workflow attempt uploads and deploys one shared name,
+`github-pages-<run_id>-<run_attempt>`. Re-running a job keeps its run ID but
+increments its attempt, so retained uploads from earlier attempts cannot make
+the deployment action find duplicate names. Earlier artifacts are not deleted.
+
+Before deployment, `scripts/wait_pages_artifact.py` waits up to 60 seconds for
+the completed upload's exact ID and name to appear in the run's REST artifact
+list. The workflow grants `actions: read` for these metadata requests. Missing
+metadata and temporary read failures are retried; ambiguous identity,
+authorization failures and invalid metadata stop deployment. The step itself
+has a two-minute limit. `make test-site` covers the gate without network access.
+
+This wait reduces the upload visibility race; it cannot guarantee visibility
+in the separate artifact service used by the pinned deployment action. A
+remaining deployment failure stays visible and must be inspected. The workflow
+does not blindly retry deployment creation, which could duplicate an already
+accepted deployment. Its existing deployment concurrency remains serialized.
+
+A rerun of an older commit uses that commit's workflow, including its original
+artifact naming. After a workflow fix reaches `main`, dispatch the current
+Pages workflow to deploy it. Static-site fixes do not require a binary or
+package release.
+
 ## Restore the public backend later
 
 The retained `/admin/` URL is the stable entry point. Restore the backend on
