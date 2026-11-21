@@ -4,6 +4,10 @@ All notable releases are documented here. Version source of truth: [`VERSION`](.
 
 ## Unreleased
 
+- Add official integration artwork and protocol labels to the homepage cards,
+  with local assets, source provenance and original notices. Preserve the
+  existing setup links, availability labels and keyboard navigation.
+
 - Make ecosystem integrations discoverable from the homepage and a public
   support hub, with task-oriented links to existing setup guides and explicit
   package, checkout, recipe and experimental boundaries. Clarify that the

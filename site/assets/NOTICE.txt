@@ -15,3 +15,10 @@ included in vllm-semantic-router-LICENSE.txt next to this notice.
 The logo identifies the publisher of the linked integration walkthrough.
 Names and marks remain with their respective owners. This use does not claim
 an endorsement or partnership.
+
+Additional integration identification artwork
+
+See integrations/NOTICE.txt for the unmodified project marks used in the
+homepage integration cards. integrations/sources.json records their exact
+upstream sources and hashes; original repository notices are retained beside
+the assets. Each mark remains under its owner's applicable terms.

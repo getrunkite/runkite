@@ -80,6 +80,15 @@ h2 { font: 500 clamp(2.05rem, 3.4vw, 3rem)/1.15 var(--font-display); letter-spac
 .ecosystem-card { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; padding: 1.5rem; color: var(--ink); background: #111112; text-decoration: none; }
 .ecosystem-card:hover, .ecosystem-card:focus-visible { background: #1d1912; color: var(--ink); }
 .ecosystem-card:focus-visible { position: relative; z-index: 1; outline-offset: -3px; }
+.ecosystem-visual { display: flex; align-items: center; gap: .75rem; width: 100%; min-height: 3.5rem; margin-bottom: 1.4rem; }
+.ecosystem-marks { display: inline-flex; align-items: center; gap: .5rem; flex: none; }
+.ecosystem-mark { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 3.5rem; height: 3.5rem; padding: .6rem; border: 1px solid #3e3c3b; border-radius: .6rem; background: #202022; }
+.ecosystem-mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.ecosystem-mark--light { background: #f5f5f4; border-color: #d6d3cd; }
+.ecosystem-mark--wide { width: 8.25rem; padding-inline: .55rem; }
+.ecosystem-mark--phoenix { padding: 1rem; }
+.ecosystem-wire { flex: 1; min-width: .5rem; height: 1px; background: #494034; }
+.ecosystem-transport { flex: none; padding: .25rem .4rem; border: 1px solid #494034; color: #d3c1a1; font: .875rem/1.5 var(--font-mono); }
 .ecosystem-purpose { font: .875rem/1.6 var(--font-mono); color: #c6b391; }
 .ecosystem-card h3 { margin: .75rem 0 .85rem; font-size: 1.45rem; line-height: 1.35; font-weight: 500; letter-spacing: -.02em; }
 .ecosystem-card h3 > span { color: #bbb6ae; }
@@ -88,8 +97,10 @@ h2 { font: 500 clamp(2.05rem, 3.4vw, 3rem)/1.15 var(--font-display); letter-spac
 .ecosystem-action { display: inline-flex; align-items: center; gap: .8rem; margin-top: .85rem; color: var(--accent-2); font-size: .9rem; line-height: 1.6; }
 .ecosystem-card:hover .ecosystem-action, .ecosystem-card:focus-visible .ecosystem-action { text-decoration: underline; text-underline-offset: .25rem; }
 .ecosystem-note { margin: 1.25rem 0 0; max-width: 68rem; color: #aaa59d; font-size: .875rem; line-height: 1.8; }
-@media (max-width: 900px) { .ecosystem-heading { flex-direction: column; align-items: flex-start; gap: 1rem; } .ecosystem-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (max-width: 560px) { .ecosystem { padding-block: 3rem; } .ecosystem-grid { grid-template-columns: minmax(0, 1fr); } .ecosystem-card { padding: 1.25rem; } }
+@media (max-width: 1150px) { .ecosystem-heading { flex-direction: column; align-items: flex-start; gap: 1rem; } .ecosystem-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ecosystem-mark { width: 3rem; height: 3rem; } .ecosystem-mark--wide { width: 8rem; } }
+@media (max-width: 760px) { .ecosystem-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 560px) { .ecosystem { padding-block: 3rem; } .ecosystem-card { padding: 1.25rem; } .ecosystem-visual { gap: .5rem; margin-bottom: 1.15rem; } .ecosystem-marks { gap: .4rem; } .ecosystem-mark { width: 2.75rem; height: 2.75rem; padding: .45rem; } .ecosystem-mark--wide { width: 7rem; } .ecosystem-mark--phoenix { padding: .8rem; } }
+@media (max-width: 380px) { .ecosystem-visual { gap: .4rem; } .ecosystem-marks { gap: .25rem; } .ecosystem-mark { width: 2.5rem; height: 2.5rem; } .ecosystem-mark--wide { width: 7rem; } .ecosystem-wire { min-width: 0; } }
 .packages .section-heading { margin-bottom: 1.8rem; }
 .package-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
 .package-card { display: flex; flex-direction: column; min-width: 0; padding: 1.35rem; border: 1px solid #323132; border-top: 2px solid var(--accent); background: #101011; }

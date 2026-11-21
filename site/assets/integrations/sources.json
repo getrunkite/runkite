@@ -1,0 +1,116 @@
+{
+  "retrieved": "2026-11-20",
+  "assets": [
+    {
+      "file": "promptfoo.svg",
+      "project": "promptfoo/promptfoo",
+      "revision": "60424a1e7532d24eafc9b0fb0d103d43a841501f",
+      "source": "https://raw.githubusercontent.com/promptfoo/promptfoo/60424a1e7532d24eafc9b0fb0d103d43a841501f/site/static/img/logo-panda.svg",
+      "license_file": "promptfoo-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/promptfoo/promptfoo/60424a1e7532d24eafc9b0fb0d103d43a841501f/LICENSE",
+      "sha256": "e8e3ad52c4ea4431c169a97ad158f5211915f831e273fa83571d40c212431b32",
+      "bytes": 8363,
+      "viewBox": "200 325 200 200"
+    },
+    {
+      "file": "langflow.svg",
+      "project": "langflow-ai/langflow",
+      "revision": "21381e5b2964fb4c714dc91fcd5187d4cfc2a67f",
+      "source": "https://raw.githubusercontent.com/langflow-ai/langflow/21381e5b2964fb4c714dc91fcd5187d4cfc2a67f/docs/static/img/langflow-icon-black-transparent.svg",
+      "license_file": "langflow-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/langflow-ai/langflow/21381e5b2964fb4c714dc91fcd5187d4cfc2a67f/LICENSE",
+      "sha256": "24d57d2b8e158974f32d26423296561d96c25595ab46c45f0a12880af31e11fe",
+      "bytes": 1857,
+      "viewBox": "0 0 470 470"
+    },
+    {
+      "file": "langfuse.svg",
+      "project": "langfuse/langfuse",
+      "revision": "06e48fa78595869122cffbd3f2afd424f6ebc687",
+      "source": "https://raw.githubusercontent.com/langfuse/langfuse/06e48fa78595869122cffbd3f2afd424f6ebc687/web/public/icon.svg",
+      "license_file": "langfuse-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/langfuse/langfuse/06e48fa78595869122cffbd3f2afd424f6ebc687/LICENSE",
+      "sha256": "daeef880d58644fab4fd9ba5d292086c6d69756a39cff94d510f8ddc35312bf3",
+      "bytes": 2999,
+      "viewBox": "0 0 512 512"
+    },
+    {
+      "file": "trinity.svg",
+      "project": "abilityai/trinity",
+      "revision": "7860fbb190e229f6fb151f5c23b55f4a21bc20b3",
+      "source": "https://raw.githubusercontent.com/abilityai/trinity/7860fbb190e229f6fb151f5c23b55f4a21bc20b3/src/frontend/public/icons/trinity-mobile.svg",
+      "license_file": "trinity-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/abilityai/trinity/7860fbb190e229f6fb151f5c23b55f4a21bc20b3/LICENSE",
+      "sha256": "b9f5978eb16020025111259573693316b9447d220951225ae2530679f3891832",
+      "bytes": 679,
+      "viewBox": "0 0 512 512"
+    },
+    {
+      "file": "ag-ui.svg",
+      "project": "ag-ui-protocol/ag-ui",
+      "revision": "ab01f98214529e64d7857b16617c094afc360ad0",
+      "source": "https://raw.githubusercontent.com/ag-ui-protocol/ag-ui/ab01f98214529e64d7857b16617c094afc360ad0/docs/favicon.svg",
+      "license_file": "ag-ui-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/ag-ui-protocol/ag-ui/ab01f98214529e64d7857b16617c094afc360ad0/LICENSE",
+      "sha256": "afc97c1b824942de5c5f4657a5f5c971205c5856c2d8df73836dfdfd027a2e90",
+      "bytes": 865,
+      "viewBox": "0 0 57 66"
+    },
+    {
+      "file": "ai-sdk.svg",
+      "project": "vercel/ai",
+      "revision": "a8f0e9dc55d73f2237759abd263da6ae674de523",
+      "source": "https://raw.githubusercontent.com/vercel/ai/a8f0e9dc55d73f2237759abd263da6ae674de523/apps/docs/app/icon.svg",
+      "license_file": "ai-sdk-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/vercel/ai/a8f0e9dc55d73f2237759abd263da6ae674de523/LICENSE",
+      "sha256": "b59159268982987f60da7cfb09c2f1aab4254c7d480e519f3e4f6c365a0b11ab",
+      "bytes": 172,
+      "viewBox": "0 0 64 64"
+    },
+    {
+      "file": "cline.svg",
+      "project": "cline/cline",
+      "revision": "20b042723a14412f6c1e84230b008708534d6e8c",
+      "source": "https://raw.githubusercontent.com/cline/cline/20b042723a14412f6c1e84230b008708534d6e8c/assets/branding/logos/cline-icon-white.svg",
+      "license_file": "cline-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/cline/cline/20b042723a14412f6c1e84230b008708534d6e8c/LICENSE",
+      "sha256": "a8932a1fa6a919466b4a36e76519be4a600fc1b83c41d84f94c3e8e45260a8e1",
+      "bytes": 3574,
+      "viewBox": "0 0 113 113"
+    },
+    {
+      "file": "phoenix.svg",
+      "project": "Arize-ai/phoenix",
+      "revision": "2e819d49ad54dda3fc9d2cad2904fd28fb3114c5",
+      "source": "https://raw.githubusercontent.com/Arize-ai/phoenix/2e819d49ad54dda3fc9d2cad2904fd28fb3114c5/plugins/codex/arize-phoenix/assets/logo.svg",
+      "license_file": "phoenix-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/Arize-ai/phoenix/2e819d49ad54dda3fc9d2cad2904fd28fb3114c5/LICENSE",
+      "sha256": "839507e9a03c0aa1960b6ffea31c67466073f179f88a95891f383ff4d414adbf",
+      "bytes": 26725,
+      "viewBox": "0 0 24 24"
+    },
+    {
+      "file": "opentelemetry.svg",
+      "project": "cncf/artwork",
+      "revision": "099d60e33670b00b3f6a82843c9acd69d791b698",
+      "source": "https://raw.githubusercontent.com/cncf/artwork/099d60e33670b00b3f6a82843c9acd69d791b698/projects/opentelemetry/icon/color/opentelemetry-icon-color.svg",
+      "license_file": "opentelemetry-LICENSE.txt",
+      "license_source": "https://raw.githubusercontent.com/cncf/artwork/099d60e33670b00b3f6a82843c9acd69d791b698/LICENSE.md",
+      "sha256": "f19d3aa81895ba0d2102df6bbd76371e55664f8f6714c6ed355f971b7b013906",
+      "bytes": 1113,
+      "viewBox": "-12.70 -12.70 1024.40 1024.40"
+    },
+    {
+      "file": "github.svg",
+      "project": "GitHub",
+      "source": "https://brand.github.com/GitHub_Logos.zip",
+      "archive_member": "GitHub Logos/SVG/GitHub_Invertocat_White.svg",
+      "archive_sha256": "e2a67d6cc51d990a52c46c1cf6bcab688db4830982174bca50e0be7a5c2f3194",
+      "license": "GitHub brand guidelines; trademark artwork, not Apache-2.0",
+      "terms": "https://brand.github.com/foundations/logo",
+      "sha256": "ccd84c89b1056345608fc3489357f8acc7397e49a3cdc2d418b6c8016911d47b",
+      "bytes": 1559,
+      "viewBox": "0 0 98 96"
+    }
+  ]
+}

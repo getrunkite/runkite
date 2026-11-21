@@ -1,0 +1,2 @@
+# Preserve the original asset bytes, including upstream CRLF line endings.
+promptfoo.svg -text whitespace=cr-at-eol

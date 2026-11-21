@@ -1,0 +1,55 @@
+Integration identification artwork
+
+These unmodified assets identify the projects named in the integration cards.
+They do not indicate sponsorship, endorsement, adoption or a partnership.
+Names and marks remain the property of their respective owners. Repository
+software licenses do not grant general rights to those trademarks.
+
+sources.json records each exact source, revision where available, asset hash
+and original license location. Adjacent license files retain the upstream
+repository notices. These files have their own terms; Runkite's Apache-2.0
+license does not relicense third-party artwork.
+
+promptfoo.svg: promptfoo's panda mark, MIT repository notice retained in
+promptfoo-LICENSE.txt.
+
+langflow.svg: Langflow's black icon, MIT repository notice retained in
+langflow-LICENSE.txt.
+
+langfuse.svg: Langfuse's application icon, repository license and scope retained
+in langfuse-LICENSE.txt. The asset is outside the enterprise directories named
+in that notice.
+
+trinity.svg: Trinity's mobile application icon from abilityai/trinity.
+The Apache-2.0 repository notice is retained in trinity-LICENSE.txt.
+
+ag-ui.svg: AG-UI's documentation favicon, MIT repository notice retained in
+ag-ui-LICENSE.txt.
+
+ai-sdk.svg: the official AI SDK documentation favicon, depicting the Vercel
+mark. It is not a newly created AI SDK logo. The upstream Apache-2.0 notice
+is retained in ai-sdk-LICENSE.txt; the complete Apache-2.0 text also ships
+in the repository's root LICENSE.
+
+cline.svg: Cline's official white icon. The Apache-2.0 repository notice is
+retained in cline-LICENSE.txt.
+
+phoenix.svg: the Arize Phoenix icon distributed with its official plugin.
+The repository's Elastic License 2.0 is retained in phoenix-LICENSE.txt.
+Preserve the original color, proportions and clear space.
+Brand guidance: https://github.com/Arize-ai/phoenix/tree/main/assets/brand
+
+opentelemetry.svg: the OpenTelemetry color icon from cncf/artwork. Its artwork
+terms are retained in opentelemetry-LICENSE.txt and refer to the Linux
+Foundation trademark guidelines. This is not Apache-licensed artwork.
+https://www.linuxfoundation.org/trademark-usage/
+
+github.svg: the official white GitHub Invertocat, obtained from the archive
+linked by https://brand.github.com/foundations/logo . It is trademark artwork,
+not an Apache-licensed dependency. Use the supplied variant without recoloring,
+effects or distortion, in a secondary role to identify the integration recipe.
+The archive member and both archive and asset hashes are in sources.json.
+
+The vLLM Semantic Router logo is reused from the parent assets directory.
+Its original source and license are recorded in ../NOTICE.txt and
+../vllm-semantic-router-LICENSE.txt.
